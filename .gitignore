@@ -1,0 +1,6 @@
+﻿################################################################################
+# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
+################################################################################
+
+/real-proxy-api/.vs
+/real-proxy-api/real-proxy-api/bin/Debug/net9.0
