@@ -4,3 +4,7 @@
 
 /real-proxy-api/.vs
 /real-proxy-api/real-proxy-api/bin/Debug/net9.0
+/.vs/real-proxy-api/v17/.suo
+/bin/Debug/net9.0
+/obj
+/real-proxy-api.sln
