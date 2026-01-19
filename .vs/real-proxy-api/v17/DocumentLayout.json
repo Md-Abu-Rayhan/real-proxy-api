@@ -3,6 +3,22 @@
   "WorkspaceRootPath": "R:\\Git Project\\real-proxy-api\\",
   "Documents": [
     {
+      "AbsoluteMoniker": "D:0:0:{D0D261FE-6ECA-6BF0-C16B-D763EF229517}|real-proxy-api.csproj|r:\\git project\\real-proxy-api\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{D0D261FE-6ECA-6BF0-C16B-D763EF229517}|real-proxy-api.csproj|solutionrelative:program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{D0D261FE-6ECA-6BF0-C16B-D763EF229517}|real-proxy-api.csproj|r:\\git project\\real-proxy-api\\properties\\launchsettings.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}",
+      "RelativeMoniker": "D:0:0:{D0D261FE-6ECA-6BF0-C16B-D763EF229517}|real-proxy-api.csproj|solutionrelative:properties\\launchsettings.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{D0D261FE-6ECA-6BF0-C16B-D763EF229517}|real-proxy-api.csproj|r:\\git project\\real-proxy-api\\real-proxy-api.csproj||{04B8AB82-A572-4FEF-95CE-5222444B6B64}|",
+      "RelativeMoniker": "D:0:0:{D0D261FE-6ECA-6BF0-C16B-D763EF229517}|real-proxy-api.csproj|solutionrelative:real-proxy-api.csproj||{04B8AB82-A572-4FEF-95CE-5222444B6B64}|"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{D0D261FE-6ECA-6BF0-C16B-D763EF229517}|real-proxy-api.csproj|r:\\git project\\real-proxy-api\\real-proxy-api.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|",
+      "RelativeMoniker": "D:0:0:{D0D261FE-6ECA-6BF0-C16B-D763EF229517}|real-proxy-api.csproj|solutionrelative:real-proxy-api.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|"
+    },
+    {
       "AbsoluteMoniker": "D:0:0:{D0D261FE-6ECA-6BF0-C16B-D763EF229517}|real-proxy-api.csproj|r:\\git project\\real-proxy-api\\appsettings.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}",
       "RelativeMoniker": "D:0:0:{D0D261FE-6ECA-6BF0-C16B-D763EF229517}|real-proxy-api.csproj|solutionrelative:appsettings.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}"
     }
@@ -14,20 +30,70 @@
       "DocumentGroups": [
         {
           "DockedWidth": 200,
-          "SelectedChildIndex": 0,
+          "SelectedChildIndex": 2,
           "Children": [
             {
               "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "launchSettings.json",
+              "DocumentMoniker": "R:\\Git Project\\real-proxy-api\\Properties\\launchSettings.json",
+              "RelativeDocumentMoniker": "Properties\\launchSettings.json",
+              "ToolTip": "R:\\Git Project\\real-proxy-api\\Properties\\launchSettings.json",
+              "RelativeToolTip": "Properties\\launchSettings.json",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAkAAAAfAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001642|",
+              "WhenOpened": "2026-01-19T21:28:33.9Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "real-proxy-api",
+              "DocumentMoniker": "R:\\Git Project\\real-proxy-api\\real-proxy-api.csproj",
+              "RelativeDocumentMoniker": "real-proxy-api.csproj",
+              "ToolTip": "R:\\Git Project\\real-proxy-api\\real-proxy-api.csproj",
+              "RelativeToolTip": "real-proxy-api.csproj",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
+              "WhenOpened": "2026-01-19T21:28:31.786Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
               "DocumentIndex": 0,
+              "Title": "Program.cs",
+              "DocumentMoniker": "R:\\Git Project\\real-proxy-api\\Program.cs",
+              "RelativeDocumentMoniker": "Program.cs",
+              "ToolTip": "R:\\Git Project\\real-proxy-api\\Program.cs*",
+              "RelativeToolTip": "Program.cs*",
+              "ViewState": "AgIAAEsAAAAAAAAAAAAgwFIAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-01-19T21:11:20.512Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "real-proxy-api.csproj",
+              "DocumentMoniker": "R:\\Git Project\\real-proxy-api\\real-proxy-api.csproj",
+              "RelativeDocumentMoniker": "real-proxy-api.csproj",
+              "ToolTip": "R:\\Git Project\\real-proxy-api\\real-proxy-api.csproj",
+              "RelativeToolTip": "real-proxy-api.csproj",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAwAAABgAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
+              "WhenOpened": "2026-01-19T20:25:18.08Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
               "Title": "appsettings.json",
               "DocumentMoniker": "R:\\Git Project\\real-proxy-api\\appsettings.json",
               "RelativeDocumentMoniker": "appsettings.json",
               "ToolTip": "R:\\Git Project\\real-proxy-api\\appsettings.json",
               "RelativeToolTip": "appsettings.json",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAYAAAAEAAAAAAAAAA==",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAABEAAAABAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001642|",
-              "WhenOpened": "2026-01-18T22:20:41.779Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-01-18T22:20:41.779Z"
             }
           ]
         }
