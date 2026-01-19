@@ -8,3 +8,8 @@
 /bin/Debug/net9.0
 /obj
 /real-proxy-api.sln
+/‎appsettings.json
+/.vs/real-proxy-api/DesignTimeBuild/.dtbcache.v2
+/.vs/real-proxy-api/FileContentIndex/06516036-7671-4fdd-a041-a590d6bd4cf2.vsidx
+*.vsidx
+/.vs/real-proxy-api/FileContentIndex/e27a1798-482b-4d03-b4b0-78a492c5f822.vsidx
