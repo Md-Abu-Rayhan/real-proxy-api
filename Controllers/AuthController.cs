@@ -1,11 +1,6 @@
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using System.Text;
-using Dapper;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.IdentityModel.Tokens;
-using MySqlConnector;
-using real_proxy_api.Models;
+using real_proxy_api.DTOs;
+using real_proxy_api.Services;
 
 namespace real_proxy_api.Controllers
 {
@@ -13,100 +8,70 @@ namespace real_proxy_api.Controllers
     [ApiController]
     public class AuthController : ControllerBase
     {
-        private readonly IConfiguration _configuration;
-        private readonly MySqlConnection _connection;
+        private readonly IAuthService _authService;
 
-        public AuthController(IConfiguration configuration, MySqlConnection connection)
+        public AuthController(IAuthService authService)
         {
-            _configuration = configuration;
-            _connection = connection;
+            _authService = authService;
         }
 
         [HttpPost("register")]
         public async Task<IActionResult> Register([FromBody] RegisterRequest request)
         {
-            if (string.IsNullOrEmpty(request.Email) || string.IsNullOrEmpty(request.Password))
+            var result = await _authService.RegisterAsync(request);
+
+            if (!result.Success)
             {
-                return BadRequest("Email and Password are required.");
+                return result.Message.Contains("exists") ? Conflict(result.Message) : BadRequest(result.Message);
             }
 
-            // Check if user exists
-            var existingUser = await _connection.QueryFirstOrDefaultAsync<User>(
-                "SELECT * FROM Users WHERE Email = @Email", new { request.Email });
-
-            if (existingUser != null)
-            {
-                return Conflict("User already exists");
-            }
-
-            var passwordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
-
-            var sql = @"INSERT INTO Users (Email, PasswordHash, InvitationCode) 
-                        VALUES (@Email, @PasswordHash, @InvitationCode)";
-
-            await _connection.ExecuteAsync(sql, new 
-            { 
-                request.Email, 
-                PasswordHash = passwordHash, 
-                request.InvitationCode 
-            });
-
-            return Ok(new { message = "User registered successfully" });
+            return Ok(new { message = result.Message });
         }
 
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginRequest request)
         {
-            var email = request.Email?.Trim();
-            var user = await _connection.QueryFirstOrDefaultAsync<User>(
-                "SELECT * FROM Users WHERE Email = @Email", new { Email = email });
+            var result = await _authService.LoginAsync(request);
 
-            if (user == null || !BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
+            if (!result.Success)
             {
-                return Unauthorized("Invalid credentials");
+                return Unauthorized(result.Message);
             }
 
-            var token = GenerateJwtToken(user.Email);
-            return Ok(new { token });
+            return Ok(new { token = result.Token });
         }
 
 
 
-        private string GenerateJwtToken(string email)
+        [HttpPost("forget-password/send-otp")]
+        public async Task<IActionResult> SendOtp([FromBody] ForgetPasswordRequest request)
         {
-            var jwtSettings = _configuration.GetSection("Jwt");
-            var keyStr = jwtSettings["Key"] ?? "DefaultSecretKeyForDevelopmentOnly12345";
-            var key = new SymmetricSecurityKey(Encoding.ASCII.GetBytes(keyStr));
-            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+            var result = await _authService.SendOtpAsync(request);
 
-            var claims = new[]
+            if (!result.Success)
             {
-                new Claim(ClaimTypes.Email, email),
-                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
-            };
+                if (result.Message.Contains("not found"))
+                    return NotFound(result.Message);
+                if (result.Message.Contains("Failed to send"))
+                    return StatusCode(500, result.Message);
+                return BadRequest(result.Message);
+            }
 
-            var token = new JwtSecurityToken(
-                issuer: jwtSettings["Issuer"],
-                audience: jwtSettings["Audience"],
-                claims: claims,
-                expires: DateTime.Now.AddDays(7),
-                signingCredentials: creds
-            );
+            return Ok(new { message = result.Message });
+        }
 
-            return new JwtSecurityTokenHandler().WriteToken(token);
+        [HttpPost("forget-password/reset-password")]
+        public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest request)
+        {
+            var result = await _authService.ResetPasswordAsync(request);
+
+            if (!result.Success)
+            {
+                return BadRequest(result.Message);
+            }
+
+            return Ok(new { message = result.Message });
         }
     }
 
-    public class RegisterRequest
-    {
-        public string Email { get; set; } = string.Empty;
-        public string Password { get; set; } = string.Empty;
-        public string? InvitationCode { get; set; }
-    }
-
-    public class LoginRequest
-    {
-        public string Email { get; set; } = string.Empty;
-        public string Password { get; set; } = string.Empty;
-    }
 }

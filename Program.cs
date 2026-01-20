@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using MySqlConnector;
+using real_proxy_api.Repositories;
+using real_proxy_api.Services;
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -43,6 +45,15 @@ builder.Services.AddSwaggerGen(c =>
 builder.Services.AddTransient<MySqlConnection>(_ =>
     new MySqlConnection(builder.Configuration.GetConnectionString("DefaultConnection")));
 
+// Register Repositories
+builder.Services.AddScoped<IOtpRepository, OtpRepository>();
+builder.Services.AddScoped<IUserRepository, UserRepository>();
+
+// Register Services
+builder.Services.AddScoped<IEmailService, EmailService>();
+builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IJwtService, JwtService>();
+
 // Configure JWT Authentication
 var jwtSettings = builder.Configuration.GetSection("Jwt");
 var key = Encoding.ASCII.GetBytes(jwtSettings["Key"] ?? "DefaultSecretKeyForDevelopmentOnly12345");
@@ -70,14 +81,16 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowNextJS",
+    options.AddPolicy("AllowAll",
         policy =>
         {
-            policy.WithOrigins("http://localhost:3002")
-                  .AllowAnyHeader()
-                  .AllowAnyMethod();
+            policy
+                .AllowAnyOrigin()
+                .AllowAnyHeader()
+                .AllowAnyMethod();
         });
 });
+
 
 var app = builder.Build();
 
@@ -90,7 +103,7 @@ app.UseSwaggerUI(c =>
 
 app.UseHttpsRedirection();
 
-app.UseCors("AllowNextJS");
+app.UseCors("AllowAll");
 
 app.UseAuthentication();
 app.UseAuthorization();
