@@ -21,3 +21,7 @@
 /bin/Release/net9.0/real-proxy-api.exe
 /bin/Release/net9.0/real-proxy-api.pdb
 /appsettings.json
+
+# Build folders
+bin/
+obj/
