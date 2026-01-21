@@ -1,6 +1,8 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using real_proxy_api.DTOs;
 using real_proxy_api.Services;
+using System.Security.Claims;
 
 namespace real_proxy_api.Controllers
 {
@@ -71,6 +73,54 @@ namespace real_proxy_api.Controllers
             }
 
             return Ok(new { message = result.Message });
+        }
+
+        [HttpPost("add-sub-account")]
+        public async Task<IActionResult> AddSubAccount([FromBody] AddSubAccountRequest request)
+        {
+            var result = await _authService.AddSubAccountAsync(request);
+
+            if (!result.Success)
+            {
+                if (result.Message.Contains("not found"))
+                    return NotFound(result.Message);
+                if (result.Message.Contains("already has"))
+                    return Conflict(new { message = result.Message, proxyAccount = result.ProxyAccount });
+                return BadRequest(result.Message);
+            }
+
+            return Ok(new 
+            { 
+                message = result.Message,
+                proxyAccount = result.ProxyAccount,
+                proxyPassword = result.ProxyPassword
+            });
+        }
+
+        [Authorize]
+        [HttpGet("get-proxy-info")]
+        public async Task<IActionResult> GetProxyInfo()
+        {
+            var email = User.FindFirstValue(ClaimTypes.Email);
+
+            if (string.IsNullOrWhiteSpace(email))
+            {
+                // Token is valid (Authorize), but missing expected email claim.
+                return Unauthorized("Email claim is missing from token");
+            }
+
+            var result = await _authService.GetProxyInfoAsync(email);
+
+            if (!result.Success)
+            {
+                return NotFound(result.Message);
+            }
+
+            return Ok(new
+            {
+                proxyAccount = result.ProxyAccount,
+                proxyPassword = result.ProxyPassword
+            });
         }
     }
 
