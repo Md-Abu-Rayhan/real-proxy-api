@@ -28,3 +28,6 @@ obj/
 /.vs/real-proxy-api/CopilotIndices/17.14.1431.25910
 /.vs/real-proxy-api/FileContentIndex/51e51caa-dd0f-413f-a988-d364f261fa10.vsidx
 /appsettings.Development.json
+/.vs/ProjectEvaluation/real-proxy-api.metadata.v9.bin
+/.vs/ProjectEvaluation/real-proxy-api.projects.v9.bin
+/.vs/ProjectEvaluation/real-proxy-api.strings.v9.bin
