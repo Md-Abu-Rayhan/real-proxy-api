@@ -54,7 +54,11 @@ builder.Services.AddHttpClient();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IJwtService, JwtService>();
+<<<<<<< HEAD
 builder.Services.AddScoped<ILocationService, LocationService>();
+=======
+builder.Services.AddHttpClient<IProxyService, ProxyService>();
+>>>>>>> bd397ebe6ae1d429803d943ed773c666ad67d05e
 
 // Configure JWT Authentication
 var jwtSettings = builder.Configuration.GetSection("Jwt");

@@ -8,5 +8,7 @@ namespace real_proxy_api.Services
         Task<(bool Success, string Message, string? Token)> LoginAsync(LoginRequest request);
         Task<(bool Success, string Message)> SendOtpAsync(ForgetPasswordRequest request);
         Task<(bool Success, string Message)> ResetPasswordAsync(ResetPasswordRequest request);
+        Task<(bool Success, string Message, string? ProxyAccount, string? ProxyPassword)> AddSubAccountAsync(AddSubAccountRequest request);
+        Task<(bool Success, string Message, string? ProxyAccount, string? ProxyPassword)> GetProxyInfoAsync(string email);
     }
 }
