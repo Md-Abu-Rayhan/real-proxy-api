@@ -126,3 +126,6 @@ obj/
 /.vs/ProjectEvaluation/real-proxy-api.projects.v9.bin
 /.vs/ProjectEvaluation/real-proxy-api.strings.v9.bin
 /.vs/real-proxy-api/v17/.futdcache.v2
+*.md
+/req
+/appsettings.json
