@@ -50,9 +50,11 @@ builder.Services.AddScoped<IOtpRepository, OtpRepository>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 
 // Register Services
+builder.Services.AddHttpClient();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IJwtService, JwtService>();
+builder.Services.AddScoped<ILocationService, LocationService>();
 builder.Services.AddHttpClient<IProxyService, ProxyService>();
 
 // Configure JWT Authentication

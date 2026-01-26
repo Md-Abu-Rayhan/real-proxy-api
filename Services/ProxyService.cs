@@ -26,8 +26,10 @@ namespace real_proxy_api.Services
             int hostname,
             int status)
         {
-            var token = _configuration["ProxyApi:Token"];
-            var key = _configuration["ProxyApi:Key"];
+            var token = "1fba7889-4be8-49fa-a34d-1551a96d2e7d";
+            //var token = _configuration["ProxyApi:Token"];
+            var key = "F692CNNBuDSWoNUU";
+            //var key = _configuration["ProxyApi:Key"];
             var apiUrl = _configuration["ProxyApi:BaseUrl"] ?? "https://docapi.922proxy.com/api/account/create";
 
             var formData = new Dictionary<string, string>
