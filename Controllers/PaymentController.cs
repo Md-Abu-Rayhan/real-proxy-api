@@ -237,7 +237,7 @@ namespace real_proxy_api.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error verifying transaction");
-                return StatusCode(500, new { message = "An error occurred while verifying transaction" });
+                return StatusCode(500, new { message = "An error occurred while verifying transaction", error = ex.Message, stackTrace = ex.StackTrace });
             }
         }
 

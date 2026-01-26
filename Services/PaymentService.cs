@@ -4,6 +4,7 @@ using real_proxy_api.Repositories;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace real_proxy_api.Services
 {
@@ -13,16 +14,17 @@ namespace real_proxy_api.Services
         private readonly IConfiguration _configuration;
         private readonly ILogger<PaymentService> _logger;
         private readonly IPaymentRepository _paymentRepository;
-        private string? _cachedToken;
-        private DateTime _tokenExpiry = DateTime.MinValue;
+        private readonly IMemoryCache _memoryCache;
+        private const string TokenCacheKey = "EpsAuthToken";
 
         public PaymentService(HttpClient httpClient, IConfiguration configuration, 
-            ILogger<PaymentService> logger, IPaymentRepository paymentRepository)
+            ILogger<PaymentService> logger, IPaymentRepository paymentRepository, IMemoryCache memoryCache)
         {
             _httpClient = httpClient;
             _configuration = configuration;
             _logger = logger;
             _paymentRepository = paymentRepository;
+            _memoryCache = memoryCache;
         }
 
         /// <summary>
@@ -64,15 +66,10 @@ namespace real_proxy_api.Services
             try
             {
                 // Check if we have a valid cached token
-                if (!string.IsNullOrEmpty(_cachedToken) && DateTime.Now < _tokenExpiry)
+                if (_memoryCache.TryGetValue(TokenCacheKey, out GetTokenResponse? cachedResponse) && cachedResponse != null)
                 {
-                    return new GetTokenResponse
-                    {
-                        Token = _cachedToken,
-                        ExpireDate = _tokenExpiry.ToString("yyyy-MM-ddTHH:mm:ss.fff"),
-                        ErrorMessage = null,
-                        ErrorCode = null
-                    };
+                    _logger.LogInformation("Using cached EPS token (expires: {ExpireDate})", cachedResponse.ExpireDate);
+                    return cachedResponse;
                 }
 
                 var epsSettings = _configuration.GetSection("EPS");
@@ -118,16 +115,26 @@ namespace real_proxy_api.Services
 
                 if (tokenResponse != null && !string.IsNullOrEmpty(tokenResponse.Token))
                 {
-                    // Cache the token
-                    _cachedToken = tokenResponse.Token;
+                    // Calculate expiration
+                    var expiryTime = TimeSpan.FromHours(1); // Default
                     if (DateTime.TryParse(tokenResponse.ExpireDate, out var expireDate))
                     {
-                        _tokenExpiry = expireDate.AddMinutes(-5); // Refresh 5 minutes before expiry
+                         // Expires 5 minutes before actual expiry to be safe, but ensure it's at least 1 minute
+                         var timeUntilExpiry = expireDate - DateTime.Now;
+                         if (timeUntilExpiry.TotalMinutes > 5)
+                         {
+                             expiryTime = timeUntilExpiry.Add(TimeSpan.FromMinutes(-5));
+                         }
+                         else
+                         {
+                             expiryTime = TimeSpan.FromMinutes(1);
+                         }
                     }
-                    else
-                    {
-                        _tokenExpiry = DateTime.Now.AddHours(1); // Default 1 hour
-                    }
+
+                    // Cache the token
+                    _memoryCache.Set(TokenCacheKey, tokenResponse, expiryTime);
+                    _logger.LogInformation("Cached new EPS token for {ExpiryMinutes} minutes (expires: {ExpireDate})", 
+                        expiryTime.TotalMinutes, tokenResponse.ExpireDate);
                 }
 
                 return tokenResponse ?? new GetTokenResponse
@@ -154,6 +161,9 @@ namespace real_proxy_api.Services
         {
             try
             {
+                // Start token fetch early (can run in parallel with validation)
+                var tokenTask = GetTokenAsync();
+
                 // Check for duplicate transactions
                 if (await _paymentRepository.MerchantTransactionIdExistsAsync(request.MerchantTransactionId))
                 {
@@ -175,8 +185,8 @@ namespace real_proxy_api.Services
                     };
                 }
 
-                // Get token first
-                var tokenResponse = await GetTokenAsync();
+                // Wait for token (should be ready by now or use cached)
+                var tokenResponse = await tokenTask;
                 if (string.IsNullOrEmpty(tokenResponse.Token))
                 {
                     return new InitializePaymentResponse
@@ -235,29 +245,6 @@ namespace real_proxy_api.Services
                     ExpiresAt = DateTime.UtcNow.AddHours(24) // Payment link expires in 24 hours
                 };
 
-                // Create metadata if additional data exists
-                PaymentMetadata? metadata = null;
-                if (!string.IsNullOrEmpty(request.ValueA) || !string.IsNullOrEmpty(request.ShipmentName) || request.ProductList != null)
-                {
-                    metadata = new PaymentMetadata
-                    {
-                        ValueA = request.ValueA,
-                        ValueB = request.ValueB,
-                        ValueC = request.ValueC,
-                        ValueD = request.ValueD,
-                        ShipmentName = request.ShipmentName,
-                        ShipmentAddress = request.ShipmentAddress,
-                        ShipmentAddress2 = request.ShipmentAddress2,
-                        ShipmentCity = request.ShipmentCity,
-                        ShipmentState = request.ShipmentState,
-                        ShipmentPostcode = request.ShipmentPostcode,
-                        ShipmentCountry = request.ShipmentCountry,
-                        ShippingMethod = request.ShippingMethod,
-                        ProductListJson = request.ProductList != null ? JsonSerializer.Serialize(request.ProductList) : null,
-                        CreatedAt = DateTime.UtcNow
-                    };
-                }
-
                 // Create initial log
                 var initialLog = new PaymentLog
                 {
@@ -270,7 +257,7 @@ namespace real_proxy_api.Services
                 };
 
                 // Save to database in transaction
-                var paymentId = await _paymentRepository.CreatePaymentWithMetadataAsync(payment, metadata, initialLog);
+                var paymentId = await _paymentRepository.CreatePaymentWithLogAsync(payment, initialLog);
 
                 // Generate x-hash using merchantTransactionId
                 var xHash = GenerateHash(request.MerchantTransactionId, hashKey);
@@ -377,9 +364,6 @@ namespace real_proxy_api.Services
                 {
                     _logger.LogInformation("Returning cached successful payment for: {MerchantTransactionId}", merchantTransactionId);
                     
-                    // Get metadata for complete response
-                    var metadata = await _paymentRepository.GetPaymentMetadataAsync(payment.Id);
-                    
                     return new VerifyTransactionResponse
                     {
                         MerchantTransactionId = payment.MerchantTransactionId,
@@ -473,24 +457,6 @@ namespace real_proxy_api.Services
                     var paymentMethod = verifyResponse.FinancialEntity;
                     
                     await _paymentRepository.MarkPaymentVerifiedAsync(payment.Id, newStatus, paymentMethod);
-
-                    // Update metadata with EPS response
-                    var metadata = await _paymentRepository.GetPaymentMetadataAsync(payment.Id);
-                    if (metadata != null)
-                    {
-                        metadata.EpsResponseJson = responseContent;
-                        await _paymentRepository.UpdatePaymentMetadataAsync(metadata);
-                    }
-                    else
-                    {
-                        // Create metadata if doesn't exist
-                        await _paymentRepository.CreatePaymentMetadataAsync(new PaymentMetadata
-                        {
-                            PaymentId = payment.Id,
-                            EpsResponseJson = responseContent,
-                            CreatedAt = DateTime.UtcNow
-                        });
-                    }
 
                     // Log status change
                     await _paymentRepository.CreatePaymentLogAsync(new PaymentLog

@@ -51,6 +51,9 @@ namespace real_proxy_api.Repositories
 
         public async Task<Payment?> GetPaymentByMerchantTransactionIdAsync(string merchantTransactionId)
         {
+            if (_connection.State != ConnectionState.Open)
+                await _connection.OpenAsync();
+                
             var sql = "SELECT * FROM payments WHERE MerchantTransactionId = @MerchantTransactionId";
             return await _connection.QueryFirstOrDefaultAsync<Payment>(sql, new { MerchantTransactionId = merchantTransactionId });
         }
@@ -192,51 +195,8 @@ namespace real_proxy_api.Repositories
             return await _connection.ExecuteAsync(sql, new { ExpiryTime = expiryTime, UpdatedAt = DateTime.UtcNow });
         }
 
-        // ==================== Payment Metadata Operations ====================
-
-        public async Task<int> CreatePaymentMetadataAsync(PaymentMetadata metadata)
-        {
-            var sql = @"
-                INSERT INTO payment_metadata (
-                    PaymentId, ValueA, ValueB, ValueC, ValueD,
-                    ShipmentName, ShipmentAddress, ShipmentAddress2,
-                    ShipmentCity, ShipmentState, ShipmentPostcode, ShipmentCountry,
-                    ShippingMethod, ProductListJson, EpsResponseJson, CreatedAt
-                ) VALUES (
-                    @PaymentId, @ValueA, @ValueB, @ValueC, @ValueD,
-                    @ShipmentName, @ShipmentAddress, @ShipmentAddress2,
-                    @ShipmentCity, @ShipmentState, @ShipmentPostcode, @ShipmentCountry,
-                    @ShippingMethod, @ProductListJson, @EpsResponseJson, @CreatedAt
-                );
-                SELECT LAST_INSERT_ID();";
-
-            return await _connection.ExecuteScalarAsync<int>(sql, metadata);
-        }
-
-        public async Task<PaymentMetadata?> GetPaymentMetadataAsync(int paymentId)
-        {
-            var sql = "SELECT * FROM payment_metadata WHERE PaymentId = @PaymentId";
-            return await _connection.QueryFirstOrDefaultAsync<PaymentMetadata>(sql, new { PaymentId = paymentId });
-        }
-
-        public async Task<bool> UpdatePaymentMetadataAsync(PaymentMetadata metadata)
-        {
-            var sql = @"
-                UPDATE payment_metadata 
-                SET ValueA = @ValueA, ValueB = @ValueB, ValueC = @ValueC, ValueD = @ValueD,
-                    ShipmentName = @ShipmentName, ShipmentAddress = @ShipmentAddress,
-                    ShipmentAddress2 = @ShipmentAddress2, ShipmentCity = @ShipmentCity,
-                    ShipmentState = @ShipmentState, ShipmentPostcode = @ShipmentPostcode,
-                    ShipmentCountry = @ShipmentCountry, ShippingMethod = @ShippingMethod,
-                    ProductListJson = @ProductListJson, EpsResponseJson = @EpsResponseJson
-                WHERE PaymentId = @PaymentId";
-
-            var rowsAffected = await _connection.ExecuteAsync(sql, metadata);
-            return rowsAffected > 0;
-        }
-
         // ==================== Payment Log Operations ====================
-
+        
         public async Task<int> CreatePaymentLogAsync(PaymentLog log)
         {
             var sql = @"
@@ -344,9 +304,15 @@ namespace real_proxy_api.Repositories
             return await _connection.QueryAsync<Payment>(sql, new { Since = since, Limit = limit });
         }
 
+        public async Task<PaymentMetadata?> GetPaymentMetadataAsync(int paymentId)
+        {
+            var sql = "SELECT * FROM payment_metadata WHERE PaymentId = @PaymentId";
+            return await _connection.QueryFirstOrDefaultAsync<PaymentMetadata>(sql, new { PaymentId = paymentId });
+        }
+
         // ==================== Transaction Management ====================
 
-        public async Task<int> CreatePaymentWithMetadataAsync(Payment payment, PaymentMetadata? metadata, PaymentLog initialLog)
+        public async Task<int> CreatePaymentWithLogAsync(Payment payment, PaymentLog initialLog)
         {
             // Ensure connection is open
             if (_connection.State != ConnectionState.Open)
@@ -379,27 +345,6 @@ namespace real_proxy_api.Repositories
                     SELECT LAST_INSERT_ID();";
 
                 var paymentId = await _connection.ExecuteScalarAsync<int>(paymentSql, payment, transaction);
-                
-                // Create metadata if provided
-                if (metadata != null)
-                {
-                    metadata.PaymentId = paymentId;
-                    
-                    var metadataSql = @"
-                        INSERT INTO payment_metadata (
-                            PaymentId, ValueA, ValueB, ValueC, ValueD,
-                            ShipmentName, ShipmentAddress, ShipmentAddress2,
-                            ShipmentCity, ShipmentState, ShipmentPostcode, ShipmentCountry,
-                            ShippingMethod, ProductListJson, EpsResponseJson, CreatedAt
-                        ) VALUES (
-                            @PaymentId, @ValueA, @ValueB, @ValueC, @ValueD,
-                            @ShipmentName, @ShipmentAddress, @ShipmentAddress2,
-                            @ShipmentCity, @ShipmentState, @ShipmentPostcode, @ShipmentCountry,
-                            @ShippingMethod, @ProductListJson, @EpsResponseJson, @CreatedAt
-                        );";
-                    
-                    await _connection.ExecuteAsync(metadataSql, metadata, transaction);
-                }
                 
                 // Create initial log
                 initialLog.PaymentId = paymentId;

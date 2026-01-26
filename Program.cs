@@ -3,11 +3,17 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using MySqlConnector;
+using Dapper;
 using real_proxy_api.Repositories;
 using real_proxy_api.Services;
+using real_proxy_api.Infrastructure;
 
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Register Dapper Type Handlers
+SqlMapper.AddTypeHandler(new MySqlDateTimeTypeHandler());
+SqlMapper.AddTypeHandler(new NullableMySqlDateTimeTypeHandler());
 
 // Add services to the container.
 builder.Services.AddControllers();
@@ -51,6 +57,7 @@ builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IPaymentRepository, PaymentRepository>();
 
 // Register Services
+builder.Services.AddMemoryCache();
 builder.Services.AddHttpClient();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IAuthService, AuthService>();

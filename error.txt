@@ -1,64 +1,55 @@
-System.InvalidOperationException
-  HResult=0x80131509
-  Message=The transaction associated with this command is not the connection's active transaction; see https://mysqlconnector.net/trans
-  Source=System.Private.CoreLib
-  StackTrace:
-   at System.Runtime.CompilerServices.ConfiguredValueTaskAwaitable`1.ConfiguredValueTaskAwaiter.GetResult()
-   at MySqlConnector.MySqlCommand.<ExecuteScalarAsync>d__83.MoveNext() in /_/src/MySqlConnector/MySqlCommand.cs:line 324
-   at Dapper.SqlMapper.<ExecuteScalarImplAsync>d__69`1.MoveNext() in /_/Dapper/SqlMapper.Async.cs:line 1241
-   at real_proxy_api.Repositories.PaymentRepository.<CreatePaymentAsync>d__2.MoveNext() in E:\Rayhan\next js\real-proxy-api\Repositories\PaymentRepository.cs:line 43
-   at real_proxy_api.Repositories.PaymentRepository.<CreatePaymentWithMetadataAsync>d__25.MoveNext() in E:\Rayhan\next js\real-proxy-api\Repositories\PaymentRepository.cs:line 359
+PS R:\Git Project\real-proxy-api> dotnet run
+Using launch settings from R:\Git Project\real-proxy-api\Properties\launchSettings.json...
+Building...
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://localhost:5157
+info: Microsoft.Hosting.Lifetime[0]
+      Application started. Press Ctrl+C to shut down.
+info: Microsoft.Hosting.Lifetime[0]
+      Hosting environment: Development
+info: Microsoft.Hosting.Lifetime[0]
+      Content root path: R:\Git Project\real-proxy-api
+warn: Microsoft.AspNetCore.HttpsPolicy.HttpsRedirectionMiddleware[3]
+      Failed to determine the https port for redirect.
+info: System.Net.Http.HttpClient.IPaymentService.LogicalHandler[100]
+      Start processing HTTP request POST https://sandboxpgapi.eps.com.bd/v1/Auth/GetToken
+info: System.Net.Http.HttpClient.IPaymentService.ClientHandler[100]
+      Sending HTTP request POST https://sandboxpgapi.eps.com.bd/v1/Auth/GetToken
+info: System.Net.Http.HttpClient.IPaymentService.ClientHandler[101]
+      Received HTTP response headers after 393.3871ms - 200
+info: System.Net.Http.HttpClient.IPaymentService.LogicalHandler[101]
+      End processing HTTP request after 436.7807ms - 200
+info: real_proxy_api.Services.PaymentService[0]
+      Cached new EPS token for 1 minutes (expires: 2026-01-27T03:20:49.3997269)
+info: System.Net.Http.HttpClient.IPaymentService.LogicalHandler[100]
+      Start processing HTTP request POST https://sandboxpgapi.eps.com.bd/v1/EPSEngine/InitializeEPS
+info: System.Net.Http.HttpClient.IPaymentService.ClientHandler[100]
+      Sending HTTP request POST https://sandboxpgapi.eps.com.bd/v1/EPSEngine/InitializeEPS
+info: System.Net.Http.HttpClient.IPaymentService.ClientHandler[101]
+      Received HTTP response headers after 50.3028ms - 200
+info: System.Net.Http.HttpClient.IPaymentService.LogicalHandler[101]
+      End processing HTTP request after 50.5649ms - 200
+info: real_proxy_api.Controllers.PaymentController[0]
+      Payment cancelled callback received. TransactionId: (null), MerchantTransactionId: 2024012611237888
+info: System.Net.Http.HttpClient.IPaymentService.LogicalHandler[100]
+      Start processing HTTP request POST https://sandboxpgapi.eps.com.bd/v1/Auth/GetToken
+info: System.Net.Http.HttpClient.IPaymentService.ClientHandler[100]
+      Sending HTTP request POST https://sandboxpgapi.eps.com.bd/v1/Auth/GetToken
+info: System.Net.Http.HttpClient.IPaymentService.ClientHandler[101]
+      Received HTTP response headers after 235.8314ms - 200
+info: System.Net.Http.HttpClient.IPaymentService.LogicalHandler[101]
+      End processing HTTP request after 236.277ms - 200
+info: real_proxy_api.Services.PaymentService[0]
+      Cached new EPS token for 1 minutes (expires: 2026-01-27T03:22:31.103977)
+info: System.Net.Http.HttpClient.IPaymentService.LogicalHandler[100]
+      Start processing HTTP request GET https://sandboxpgapi.eps.com.bd/v1/EPSEngine/CheckMerchantTransactionStatus?*
+info: System.Net.Http.HttpClient.IPaymentService.ClientHandler[100]
+      Sending HTTP request GET https://sandboxpgapi.eps.com.bd/v1/EPSEngine/CheckMerchantTransactionStatus?*
+info: System.Net.Http.HttpClient.IPaymentService.ClientHandler[101]
+      Received HTTP response headers after 84.7087ms - 200
+info: System.Net.Http.HttpClient.IPaymentService.LogicalHandler[101]
+      End processing HTTP request after 85.1149ms - 200
+info: real_proxy_api.Services.PaymentService[0]
+      Payment verified successfully. MerchantTxnId: 2024012611237888, Status: Cancel
 
-  This exception was originally thrown at this call stack:
-    System.Runtime.CompilerServices.ConfiguredValueTaskAwaitable<TResult>.ConfiguredValueTaskAwaiter.GetResult()
-    MySqlConnector.MySqlCommand.ExecuteScalarAsync(MySqlConnector.Protocol.Serialization.IOBehavior, System.Threading.CancellationToken) in MySqlCommand.cs
-    Dapper.SqlMapper.ExecuteScalarImplAsync<T>(System.Data.IDbConnection, Dapper.CommandDefinition) in SqlMapper.Async.cs
-    real_proxy_api.Repositories.PaymentRepository.CreatePaymentAsync(real_proxy_api.Models.Payment) in PaymentRepository.cs
-    real_proxy_api.Repositories.PaymentRepository.CreatePaymentWithMetadataAsync(real_proxy_api.Models.Payment, real_proxy_api.Models.PaymentMetadata, real_proxy_api.Models.PaymentLog) in PaymentRepository.cs
-
-curl -X 'POST' \
-  'http://localhost:5157/api/Payment/initialize' \
-  -H 'accept: */*' \
-  -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9uYW1laWRlbnRpZmllciI6IjEiLCJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9lbWFpbGFkZHJlc3MiOiJwZXJzb25hbC5hYmlkcmF5aGFuQGdtYWlsLmNvbSIsImp0aSI6ImM5ZmVhYjgyLThkODAtNDIyOC04N2ZjLWFiYWMzNGZkNmM0MyIsImV4cCI6MTc3MDAzNTEwNiwiaXNzIjoicmVhbC1wcm94eS1hcGkiLCJhdWQiOiJyZWFsLXByb3h5LWFwaS1jbGllbnQifQ.WJmehJ5a0-bMPBXfmcieb1NSdn-Gu0aYs458hLnqNEk' \
-  -H 'Content-Type: application/json' \
-  -d '{
-  "customerOrderId": "ORDER1245678",
-  "merchantTransactionId": "20240126112347888",
-  "transactionTypeId": 1,
-  "totalAmount": 1000.50,
-  "successUrl": "http://localhost:5157/api/payment/callback/success",
-  "failUrl": "http://localhost:5157/api/payment/callback/fail",
-  "cancelUrl": "http://localhost:5157/api/payment/callback/cancel",
-  "customerName": "John Doe",
-  "customerEmail": "john@example.com",
-  "customerAddress": "123 Main Street",
-  "customerCity": "Dhaka",
-  "customerState": "Dhaka",
-  "customerPostcode": "1230",
-  "customerCountry": "BD",
-  "customerPhone": "01712345678",
-  "productName": "Premium Package",
-  "productProfile": "general",
-  "productCategory": "Subscription",
-  "productList": [
-    {
-      "productName": "Item 1",
-      "noOfItem": "2",
-      "productProfile": "Profile 1",
-      "productCategory": "Category 1",
-      "productPrice": "500.25"
-    },
-    {
-      "productName": "Item 2",
-      "noOfItem": "1",
-      "productProfile": "Profile 2",
-      "productCategory": "Category 2",
-      "productPrice": "500.25"
-    }
-  ]
-}'
-
-{
-  "message": "The transaction associated with this command is not the connection's active transaction; see https://mysqlconnector.net/trans",
-  "errorCode": "EXCEPTION"
-}
+      

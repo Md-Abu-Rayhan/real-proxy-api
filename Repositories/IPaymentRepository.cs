@@ -77,23 +77,6 @@ namespace real_proxy_api.Repositories
         /// </summary>
         Task<int> ExpireOldPendingPaymentsAsync(int olderThanMinutes = 1440);
         
-        // ==================== Payment Metadata Operations ====================
-        
-        /// <summary>
-        /// Create payment metadata
-        /// </summary>
-        Task<int> CreatePaymentMetadataAsync(PaymentMetadata metadata);
-        
-        /// <summary>
-        /// Get payment metadata by payment ID
-        /// </summary>
-        Task<PaymentMetadata?> GetPaymentMetadataAsync(int paymentId);
-        
-        /// <summary>
-        /// Update payment metadata
-        /// </summary>
-        Task<bool> UpdatePaymentMetadataAsync(PaymentMetadata metadata);
-        
         // ==================== Payment Log Operations ====================
         
         /// <summary>
@@ -127,14 +110,19 @@ namespace real_proxy_api.Repositories
         /// Get recent failed payments (for monitoring)
         /// </summary>
         Task<IEnumerable<Payment>> GetRecentFailedPaymentsAsync(int hours = 24, int limit = 50);
+
+        /// <summary>
+        /// Get additional metadata for a payment
+        /// </summary>
+        Task<PaymentMetadata?> GetPaymentMetadataAsync(int paymentId);
         
         // ==================== Transaction Management ====================
         
         /// <summary>
         /// Execute multiple operations in a transaction
-        /// Used when creating payment with metadata and initial log
+        /// Used when creating payment with initial log
         /// </summary>
-        Task<int> CreatePaymentWithMetadataAsync(Payment payment, PaymentMetadata? metadata, PaymentLog initialLog);
+        Task<int> CreatePaymentWithLogAsync(Payment payment, PaymentLog initialLog);
     }
     
     /// <summary>
