@@ -96,8 +96,8 @@ namespace real_proxy_api.Services
                 return (false, "Invalid credentials", null);
             }
 
-            // Generate JWT token
-            var token = _jwtService.GenerateToken(user.Email);
+            // Generate JWT token with userId
+            var token = _jwtService.GenerateToken(user.Email, user.Id);
 
             return (true, "Login successful", token);
         }

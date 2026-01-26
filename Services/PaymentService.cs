@@ -1,0 +1,528 @@
+using real_proxy_api.DTOs;
+using real_proxy_api.Models;
+using real_proxy_api.Repositories;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+
+namespace real_proxy_api.Services
+{
+    public class PaymentService : IPaymentService
+    {
+        private readonly HttpClient _httpClient;
+        private readonly IConfiguration _configuration;
+        private readonly ILogger<PaymentService> _logger;
+        private readonly IPaymentRepository _paymentRepository;
+        private string? _cachedToken;
+        private DateTime _tokenExpiry = DateTime.MinValue;
+
+        public PaymentService(HttpClient httpClient, IConfiguration configuration, 
+            ILogger<PaymentService> logger, IPaymentRepository paymentRepository)
+        {
+            _httpClient = httpClient;
+            _configuration = configuration;
+            _logger = logger;
+            _paymentRepository = paymentRepository;
+        }
+
+        /// <summary>
+        /// Generate HMACSHA512 hash as per EPS specification
+        /// Step 1: Encode Hash Key using UTF8
+        /// Step 2: Create HMACSHA512 using encoded data
+        /// Step 3: Compute Hash using created hmac and data
+        /// Step 4: Return Base64 string of Hash
+        /// </summary>
+        public string GenerateHash(string data, string hashKey)
+        {
+            try
+            {
+                // Step 1: Encode Hash Key using UTF8
+                var encodedKey = Encoding.UTF8.GetBytes(hashKey);
+
+                // Step 2 & 3: Create HMACSHA512 and compute hash
+                using (var hmac = new HMACSHA512(encodedKey))
+                {
+                    var dataBytes = Encoding.UTF8.GetBytes(data);
+                    var hashBytes = hmac.ComputeHash(dataBytes);
+
+                    // Step 4: Return Base64 string
+                    return Convert.ToBase64String(hashBytes);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error generating hash for data: {Data}", data);
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Get authentication token from EPS Payment Gateway (API No. 01)
+        /// </summary>
+        public async Task<GetTokenResponse> GetTokenAsync()
+        {
+            try
+            {
+                // Check if we have a valid cached token
+                if (!string.IsNullOrEmpty(_cachedToken) && DateTime.Now < _tokenExpiry)
+                {
+                    return new GetTokenResponse
+                    {
+                        Token = _cachedToken,
+                        ExpireDate = _tokenExpiry.ToString("yyyy-MM-ddTHH:mm:ss.fff"),
+                        ErrorMessage = null,
+                        ErrorCode = null
+                    };
+                }
+
+                var epsSettings = _configuration.GetSection("EPS");
+                var userName = epsSettings["UserName"] ?? throw new InvalidOperationException("EPS UserName not configured");
+                var password = epsSettings["Password"] ?? throw new InvalidOperationException("EPS Password not configured");
+                var hashKey = epsSettings["HashKey"] ?? throw new InvalidOperationException("EPS HashKey not configured");
+                var baseUrl = epsSettings["BaseUrl"] ?? throw new InvalidOperationException("EPS BaseUrl not configured");
+
+                // Generate x-hash using username
+                var xHash = GenerateHash(userName, hashKey);
+
+                var request = new GetTokenRequest
+                {
+                    UserName = userName,
+                    Password = password
+                };
+
+                var httpRequest = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/v1/Auth/GetToken")
+                {
+                    Content = new StringContent(JsonSerializer.Serialize(request), Encoding.UTF8, "application/json")
+                };
+
+                // Add x-hash header
+                httpRequest.Headers.Add("x-hash", xHash);
+
+                var response = await _httpClient.SendAsync(httpRequest);
+                var responseContent = await response.Content.ReadAsStringAsync();
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogError("EPS GetToken failed with status {StatusCode}: {Response}", response.StatusCode, responseContent);
+                    return new GetTokenResponse
+                    {
+                        ErrorMessage = $"Failed to get token: {response.StatusCode}",
+                        ErrorCode = response.StatusCode.ToString()
+                    };
+                }
+
+                var tokenResponse = JsonSerializer.Deserialize<GetTokenResponse>(responseContent, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+
+                if (tokenResponse != null && !string.IsNullOrEmpty(tokenResponse.Token))
+                {
+                    // Cache the token
+                    _cachedToken = tokenResponse.Token;
+                    if (DateTime.TryParse(tokenResponse.ExpireDate, out var expireDate))
+                    {
+                        _tokenExpiry = expireDate.AddMinutes(-5); // Refresh 5 minutes before expiry
+                    }
+                    else
+                    {
+                        _tokenExpiry = DateTime.Now.AddHours(1); // Default 1 hour
+                    }
+                }
+
+                return tokenResponse ?? new GetTokenResponse
+                {
+                    ErrorMessage = "Failed to parse token response",
+                    ErrorCode = "PARSE_ERROR"
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting EPS token");
+                return new GetTokenResponse
+                {
+                    ErrorMessage = ex.Message,
+                    ErrorCode = "EXCEPTION"
+                };
+            }
+        }
+
+        /// <summary>
+        /// Initialize payment and get redirect URL (API No. 02)
+        /// </summary>
+        public async Task<InitializePaymentResponse> InitializePaymentAsync(InitializePaymentRequest request, int userId, string? ipAddress = null, string? userAgent = null)
+        {
+            try
+            {
+                // Check for duplicate transactions
+                if (await _paymentRepository.MerchantTransactionIdExistsAsync(request.MerchantTransactionId))
+                {
+                    _logger.LogWarning("Duplicate merchant transaction ID: {MerchantTransactionId}", request.MerchantTransactionId);
+                    return new InitializePaymentResponse
+                    {
+                        ErrorMessage = "This transaction ID already exists. Please use a unique transaction ID.",
+                        ErrorCode = "DUPLICATE_TRANSACTION_ID"
+                    };
+                }
+
+                if (await _paymentRepository.CustomerOrderIdExistsAsync(request.CustomerOrderId))
+                {
+                    _logger.LogWarning("Duplicate customer order ID: {CustomerOrderId}", request.CustomerOrderId);
+                    return new InitializePaymentResponse
+                    {
+                        ErrorMessage = "This order ID already exists. Please use a unique order ID.",
+                        ErrorCode = "DUPLICATE_ORDER_ID"
+                    };
+                }
+
+                // Get token first
+                var tokenResponse = await GetTokenAsync();
+                if (string.IsNullOrEmpty(tokenResponse.Token))
+                {
+                    return new InitializePaymentResponse
+                    {
+                        ErrorMessage = tokenResponse.ErrorMessage ?? "Failed to get authentication token",
+                        ErrorCode = tokenResponse.ErrorCode ?? "TOKEN_ERROR"
+                    };
+                }
+
+                var epsSettings = _configuration.GetSection("EPS");
+                var hashKey = epsSettings["HashKey"] ?? throw new InvalidOperationException("EPS HashKey not configured");
+                var baseUrl = epsSettings["BaseUrl"] ?? throw new InvalidOperationException("EPS BaseUrl not configured");
+
+                // Set merchant and store IDs from configuration if not provided
+                if (string.IsNullOrEmpty(request.MerchantId))
+                {
+                    request.MerchantId = epsSettings["MerchantId"] ?? throw new InvalidOperationException("EPS MerchantId not configured");
+                }
+                if (string.IsNullOrEmpty(request.StoreId))
+                {
+                    request.StoreId = epsSettings["StoreId"] ?? throw new InvalidOperationException("EPS StoreId not configured");
+                }
+
+                // Generate verification hash for security
+                var verificationData = $"{request.MerchantTransactionId}:{request.TotalAmount}:{userId}:{DateTime.UtcNow:yyyyMMddHHmmss}";
+                var verificationHash = GenerateHash(verificationData, hashKey);
+
+                // Create payment record in database
+                var payment = new Payment
+                {
+                    UserId = userId,
+                    CustomerOrderId = request.CustomerOrderId,
+                    MerchantTransactionId = request.MerchantTransactionId,
+                    Amount = request.TotalAmount,
+                    Currency = "BDT",
+                    TransactionTypeId = request.TransactionTypeId,
+                    Status = "Pending",
+                    ProductName = request.ProductName,
+                    ProductProfile = request.ProductProfile,
+                    ProductCategory = request.ProductCategory,
+                    CustomerName = request.CustomerName,
+                    CustomerEmail = request.CustomerEmail,
+                    CustomerPhone = request.CustomerPhone,
+                    CustomerAddress = request.CustomerAddress,
+                    CustomerCity = request.CustomerCity,
+                    CustomerState = request.CustomerState,
+                    CustomerPostcode = request.CustomerPostcode,
+                    CustomerCountry = request.CustomerCountry,
+                    SuccessUrl = request.SuccessUrl,
+                    FailUrl = request.FailUrl,
+                    CancelUrl = request.CancelUrl,
+                    IpAddress = ipAddress,
+                    UserAgent = userAgent,
+                    VerificationHash = verificationHash,
+                    CreatedAt = DateTime.UtcNow,
+                    ExpiresAt = DateTime.UtcNow.AddHours(24) // Payment link expires in 24 hours
+                };
+
+                // Create metadata if additional data exists
+                PaymentMetadata? metadata = null;
+                if (!string.IsNullOrEmpty(request.ValueA) || !string.IsNullOrEmpty(request.ShipmentName) || request.ProductList != null)
+                {
+                    metadata = new PaymentMetadata
+                    {
+                        ValueA = request.ValueA,
+                        ValueB = request.ValueB,
+                        ValueC = request.ValueC,
+                        ValueD = request.ValueD,
+                        ShipmentName = request.ShipmentName,
+                        ShipmentAddress = request.ShipmentAddress,
+                        ShipmentAddress2 = request.ShipmentAddress2,
+                        ShipmentCity = request.ShipmentCity,
+                        ShipmentState = request.ShipmentState,
+                        ShipmentPostcode = request.ShipmentPostcode,
+                        ShipmentCountry = request.ShipmentCountry,
+                        ShippingMethod = request.ShippingMethod,
+                        ProductListJson = request.ProductList != null ? JsonSerializer.Serialize(request.ProductList) : null,
+                        CreatedAt = DateTime.UtcNow
+                    };
+                }
+
+                // Create initial log
+                var initialLog = new PaymentLog
+                {
+                    Action = "Initialize",
+                    NewStatus = "Pending",
+                    RequestData = JsonSerializer.Serialize(request),
+                    IpAddress = ipAddress,
+                    UserAgent = userAgent,
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                // Save to database in transaction
+                var paymentId = await _paymentRepository.CreatePaymentWithMetadataAsync(payment, metadata, initialLog);
+
+                // Generate x-hash using merchantTransactionId
+                var xHash = GenerateHash(request.MerchantTransactionId, hashKey);
+
+                var httpRequest = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/v1/EPSEngine/InitializeEPS")
+                {
+                    Content = new StringContent(JsonSerializer.Serialize(request), Encoding.UTF8, "application/json")
+                };
+
+                // Add headers
+                httpRequest.Headers.Add("x-hash", xHash);
+                httpRequest.Headers.Add("Authorization", $"Bearer {tokenResponse.Token}");
+
+                var response = await _httpClient.SendAsync(httpRequest);
+                var responseContent = await response.Content.ReadAsStringAsync();
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogError("EPS InitializePayment failed with status {StatusCode}: {Response}", response.StatusCode, responseContent);
+                    
+                    // Log the error
+                    await _paymentRepository.CreatePaymentLogAsync(new PaymentLog
+                    {
+                        PaymentId = paymentId,
+                        Action = "InitializeError",
+                        ErrorMessage = $"HTTP {response.StatusCode}: {responseContent}",
+                        CreatedAt = DateTime.UtcNow
+                    });
+
+                    // Update payment status
+                    await _paymentRepository.UpdatePaymentStatusAsync(paymentId, "Failed", 
+                        errorCode: response.StatusCode.ToString(), 
+                        errorMessage: "Failed to initialize payment with EPS gateway");
+
+                    return new InitializePaymentResponse
+                    {
+                        ErrorMessage = $"Failed to initialize payment: {response.StatusCode}",
+                        ErrorCode = response.StatusCode.ToString()
+                    };
+                }
+
+                var initResponse = JsonSerializer.Deserialize<InitializePaymentResponse>(responseContent, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+
+                if (initResponse != null && !string.IsNullOrEmpty(initResponse.TransactionId))
+                {
+                    // Update payment with EPS transaction ID
+                    await _paymentRepository.UpdatePaymentStatusAsync(paymentId, "Pending", 
+                        epsTransactionId: initResponse.TransactionId);
+
+                    // Log successful initialization
+                    await _paymentRepository.CreatePaymentLogAsync(new PaymentLog
+                    {
+                        PaymentId = paymentId,
+                        Action = "InitializeSuccess",
+                        ResponseData = responseContent,
+                        CreatedAt = DateTime.UtcNow
+                    });
+                }
+
+                return initResponse ?? new InitializePaymentResponse
+                {
+                    ErrorMessage = "Failed to parse initialize payment response",
+                    ErrorCode = "PARSE_ERROR"
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error initializing payment");
+                return new InitializePaymentResponse
+                {
+                    ErrorMessage = ex.Message,
+                    ErrorCode = "EXCEPTION"
+                };
+            }
+        }
+
+        /// <summary>
+        /// Verify transaction status (API No. 03)
+        /// </summary>
+        public async Task<VerifyTransactionResponse> VerifyTransactionAsync(string merchantTransactionId, string? ipAddress = null)
+        {
+            try
+            {
+                // Get payment from database first
+                var payment = await _paymentRepository.GetPaymentByMerchantTransactionIdAsync(merchantTransactionId);
+                if (payment == null)
+                {
+                    _logger.LogWarning("Payment not found for merchant transaction ID: {MerchantTransactionId}", merchantTransactionId);
+                    return new VerifyTransactionResponse
+                    {
+                        ErrorMessage = "Payment transaction not found",
+                        ErrorCode = "TRANSACTION_NOT_FOUND"
+                    };
+                }
+
+                // Increment verification attempts
+                await _paymentRepository.IncrementVerificationAttemptsAsync(payment.Id);
+
+                // If already verified and successful, return cached data
+                if (payment.Status == "Success" && payment.VerifiedAt.HasValue)
+                {
+                    _logger.LogInformation("Returning cached successful payment for: {MerchantTransactionId}", merchantTransactionId);
+                    
+                    // Get metadata for complete response
+                    var metadata = await _paymentRepository.GetPaymentMetadataAsync(payment.Id);
+                    
+                    return new VerifyTransactionResponse
+                    {
+                        MerchantTransactionId = payment.MerchantTransactionId,
+                        Status = payment.Status,
+                        TotalAmount = payment.Amount.ToString("F2"),
+                        TransactionDate = payment.CompletedAt?.ToString("dd MMM yyyy hh:mm:ss tt"),
+                        TransactionType = "Purchase",
+                        FinancialEntity = payment.PaymentMethod,
+                        CustomerName = payment.CustomerName,
+                        CustomerEmail = payment.CustomerEmail,
+                        CustomerPhone = payment.CustomerPhone,
+                        CustomerAddress = payment.CustomerAddress,
+                        CustomerCity = payment.CustomerCity,
+                        CustomerState = payment.CustomerState,
+                        CustomerPostcode = payment.CustomerPostcode,
+                        CustomerCountry = payment.CustomerCountry,
+                        ProductName = payment.ProductName,
+                        ProductProfile = payment.ProductProfile,
+                        ProductCategory = payment.ProductCategory
+                    };
+                }
+
+                // Get token first
+                var tokenResponse = await GetTokenAsync();
+                if (string.IsNullOrEmpty(tokenResponse.Token))
+                {
+                    return new VerifyTransactionResponse
+                    {
+                        ErrorMessage = tokenResponse.ErrorMessage ?? "Failed to get authentication token",
+                        ErrorCode = tokenResponse.ErrorCode ?? "TOKEN_ERROR"
+                    };
+                }
+
+                var epsSettings = _configuration.GetSection("EPS");
+                var hashKey = epsSettings["HashKey"] ?? throw new InvalidOperationException("EPS HashKey not configured");
+                var baseUrl = epsSettings["BaseUrl"] ?? throw new InvalidOperationException("EPS BaseUrl not configured");
+
+                // Generate x-hash using merchantTransactionId
+                var xHash = GenerateHash(merchantTransactionId, hashKey);
+
+                var httpRequest = new HttpRequestMessage(HttpMethod.Get, 
+                    $"{baseUrl}/v1/EPSEngine/CheckMerchantTransactionStatus?merchantTransactionId={merchantTransactionId}");
+
+                // Add headers
+                httpRequest.Headers.Add("x-hash", xHash);
+                httpRequest.Headers.Add("Authorization", $"Bearer {tokenResponse.Token}");
+
+                var response = await _httpClient.SendAsync(httpRequest);
+                var responseContent = await response.Content.ReadAsStringAsync();
+
+                // Log verification attempt
+                await _paymentRepository.CreatePaymentLogAsync(new PaymentLog
+                {
+                    PaymentId = payment.Id,
+                    Action = "Verify",
+                    PreviousStatus = payment.Status,
+                    ResponseData = responseContent,
+                    IpAddress = ipAddress,
+                    CreatedAt = DateTime.UtcNow
+                });
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogError("EPS VerifyTransaction failed with status {StatusCode}: {Response}", response.StatusCode, responseContent);
+                    
+                    await _paymentRepository.CreatePaymentLogAsync(new PaymentLog
+                    {
+                        PaymentId = payment.Id,
+                        Action = "VerifyError",
+                        ErrorMessage = $"HTTP {response.StatusCode}: {responseContent}",
+                        IpAddress = ipAddress,
+                        CreatedAt = DateTime.UtcNow
+                    });
+
+                    return new VerifyTransactionResponse
+                    {
+                        ErrorMessage = $"Failed to verify transaction: {response.StatusCode}",
+                        ErrorCode = response.StatusCode.ToString()
+                    };
+                }
+
+                var verifyResponse = JsonSerializer.Deserialize<VerifyTransactionResponse>(responseContent, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+
+                if (verifyResponse != null && !string.IsNullOrEmpty(verifyResponse.Status))
+                {
+                    // Update payment status in database
+                    var newStatus = verifyResponse.Status;
+                    var paymentMethod = verifyResponse.FinancialEntity;
+                    
+                    await _paymentRepository.MarkPaymentVerifiedAsync(payment.Id, newStatus, paymentMethod);
+
+                    // Update metadata with EPS response
+                    var metadata = await _paymentRepository.GetPaymentMetadataAsync(payment.Id);
+                    if (metadata != null)
+                    {
+                        metadata.EpsResponseJson = responseContent;
+                        await _paymentRepository.UpdatePaymentMetadataAsync(metadata);
+                    }
+                    else
+                    {
+                        // Create metadata if doesn't exist
+                        await _paymentRepository.CreatePaymentMetadataAsync(new PaymentMetadata
+                        {
+                            PaymentId = payment.Id,
+                            EpsResponseJson = responseContent,
+                            CreatedAt = DateTime.UtcNow
+                        });
+                    }
+
+                    // Log status change
+                    await _paymentRepository.CreatePaymentLogAsync(new PaymentLog
+                    {
+                        PaymentId = payment.Id,
+                        Action = "StatusChange",
+                        PreviousStatus = payment.Status,
+                        NewStatus = newStatus,
+                        ResponseData = responseContent,
+                        IpAddress = ipAddress,
+                        CreatedAt = DateTime.UtcNow
+                    });
+
+                    _logger.LogInformation("Payment verified successfully. MerchantTxnId: {MerchantTransactionId}, Status: {Status}", 
+                        merchantTransactionId, newStatus);
+                }
+
+                return verifyResponse ?? new VerifyTransactionResponse
+                {
+                    ErrorMessage = "Failed to parse verify transaction response",
+                    ErrorCode = "PARSE_ERROR"
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error verifying transaction");
+                return new VerifyTransactionResponse
+                {
+                    ErrorMessage = ex.Message,
+                    ErrorCode = "EXCEPTION"
+                };
+            }
+        }
+    }
+}

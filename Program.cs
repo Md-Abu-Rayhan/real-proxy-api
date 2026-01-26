@@ -48,6 +48,7 @@ builder.Services.AddTransient<MySqlConnection>(_ =>
 // Register Repositories
 builder.Services.AddScoped<IOtpRepository, OtpRepository>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
+builder.Services.AddScoped<IPaymentRepository, PaymentRepository>();
 
 // Register Services
 builder.Services.AddHttpClient();
@@ -56,6 +57,7 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IJwtService, JwtService>();
 builder.Services.AddScoped<ILocationService, LocationService>();
 builder.Services.AddHttpClient<IProxyService, ProxyService>();
+builder.Services.AddHttpClient<IPaymentService, PaymentService>();
 
 // Configure JWT Authentication
 var jwtSettings = builder.Configuration.GetSection("Jwt");

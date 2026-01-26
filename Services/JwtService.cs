@@ -14,7 +14,7 @@ namespace real_proxy_api.Services
             _configuration = configuration;
         }
 
-        public string GenerateToken(string email)
+        public string GenerateToken(string email, int userId)
         {
             var jwtSettings = _configuration.GetSection("Jwt");
             var keyStr = jwtSettings["Key"] ?? "DefaultSecretKeyForDevelopmentOnly12345";
@@ -23,6 +23,7 @@ namespace real_proxy_api.Services
 
             var claims = new[]
             {
+                new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
                 new Claim(ClaimTypes.Email, email),
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
             };
