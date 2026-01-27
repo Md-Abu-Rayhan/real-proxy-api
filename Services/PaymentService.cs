@@ -259,12 +259,20 @@ namespace real_proxy_api.Services
                 // Save to database in transaction
                 var paymentId = await _paymentRepository.CreatePaymentWithLogAsync(payment, initialLog);
 
-                // Generate x-hash using merchantTransactionId
                 var xHash = GenerateHash(request.MerchantTransactionId, hashKey);
+
+                var jsonOptions = new JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                    WriteIndented = false
+                };
+
+                var jsonPayload = JsonSerializer.Serialize(request, jsonOptions);
+                _logger.LogInformation("EPS InitializeRequest Payload: {Payload}", jsonPayload);
 
                 var httpRequest = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/v1/EPSEngine/InitializeEPS")
                 {
-                    Content = new StringContent(JsonSerializer.Serialize(request), Encoding.UTF8, "application/json")
+                    Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json")
                 };
 
                 // Add headers
@@ -290,11 +298,11 @@ namespace real_proxy_api.Services
                     // Update payment status
                     await _paymentRepository.UpdatePaymentStatusAsync(paymentId, "Failed", 
                         errorCode: response.StatusCode.ToString(), 
-                        errorMessage: "Failed to initialize payment with EPS gateway");
+                        errorMessage: $"EPS Error: {responseContent}");
 
                     return new InitializePaymentResponse
                     {
-                        ErrorMessage = $"Failed to initialize payment: {response.StatusCode}",
+                        ErrorMessage = $"Failed to initialize payment: {response.StatusCode}. Content: {responseContent}",
                         ErrorCode = response.StatusCode.ToString()
                     };
                 }
@@ -363,7 +371,7 @@ namespace real_proxy_api.Services
                 if (payment.Status == "Success" && payment.VerifiedAt.HasValue)
                 {
                     _logger.LogInformation("Returning cached successful payment for: {MerchantTransactionId}", merchantTransactionId);
-                    
+
                     return new VerifyTransactionResponse
                     {
                         MerchantTransactionId = payment.MerchantTransactionId,
@@ -404,7 +412,7 @@ namespace real_proxy_api.Services
                 // Generate x-hash using merchantTransactionId
                 var xHash = GenerateHash(merchantTransactionId, hashKey);
 
-                var httpRequest = new HttpRequestMessage(HttpMethod.Get, 
+                var httpRequest = new HttpRequestMessage(HttpMethod.Get,
                     $"{baseUrl}/v1/EPSEngine/CheckMerchantTransactionStatus?merchantTransactionId={merchantTransactionId}");
 
                 // Add headers
@@ -428,7 +436,7 @@ namespace real_proxy_api.Services
                 if (!response.IsSuccessStatusCode)
                 {
                     _logger.LogError("EPS VerifyTransaction failed with status {StatusCode}: {Response}", response.StatusCode, responseContent);
-                    
+
                     await _paymentRepository.CreatePaymentLogAsync(new PaymentLog
                     {
                         PaymentId = payment.Id,
@@ -455,7 +463,7 @@ namespace real_proxy_api.Services
                     // Update payment status in database
                     var newStatus = verifyResponse.Status;
                     var paymentMethod = verifyResponse.FinancialEntity;
-                    
+
                     await _paymentRepository.MarkPaymentVerifiedAsync(payment.Id, newStatus, paymentMethod);
 
                     // Log status change
@@ -470,7 +478,7 @@ namespace real_proxy_api.Services
                         CreatedAt = DateTime.UtcNow
                     });
 
-                    _logger.LogInformation("Payment verified successfully. MerchantTxnId: {MerchantTransactionId}, Status: {Status}", 
+                    _logger.LogInformation("Payment verified successfully. MerchantTxnId: {MerchantTransactionId}, Status: {Status}",
                         merchantTransactionId, newStatus);
                 }
 
@@ -489,6 +497,59 @@ namespace real_proxy_api.Services
                     ErrorCode = "EXCEPTION"
                 };
             }
+        }
+        /// <summary>
+        /// Initialize payment securely by looking up price on server
+        /// </summary>
+        public async Task<InitializePaymentResponse> InitializeSecurePaymentAsync(SecurePaymentRequest request, int userId, string? ipAddress = null, string? userAgent = null)
+        {
+            // 1. Define packages (Ideally these would be in a database)
+            var packages = new Dictionary<string, (string Name, decimal Price)> 
+            {
+                { "res_10gb", ("Residential 10GB", 15.00m) },
+                { "res_50gb", ("Residential 50GB", 65.00m) },
+                { "res_100gb", ("Residential 100GB", 120.00m) },
+                { "premium_pkg", ("Premium Package", 1000.50m) }
+            };
+
+            if (!packages.TryGetValue(request.PackageId, out var package))
+            {
+                return new InitializePaymentResponse
+                {
+                    ErrorMessage = "Invalid Package ID selected.",
+                    ErrorCode = "INVALID_PACKAGE"
+                };
+            }
+
+            // 2. Generate unique MerchantTransactionId
+            string merchantTxnId = $"TXN_{DateTime.UtcNow:yyyyMMddHHmmss}_{new Random().Next(1000, 9999)}";
+
+            // 3. Create the full initialization request
+            var fullRequest = new InitializePaymentRequest
+            {
+                CustomerOrderId = request.CustomerOrderId,
+                MerchantTransactionId = merchantTxnId,
+                TransactionTypeId = 1, // Web
+                TotalAmount = package.Price,
+                ProductName = package.Name,
+                ProductProfile = "general",
+                ProductCategory = "Proxy",
+                CustomerName = request.CustomerName,
+                CustomerEmail = request.CustomerEmail,
+                CustomerPhone = request.CustomerPhone,
+                CustomerAddress = request.CustomerAddress,
+                CustomerCity = request.CustomerCity,
+                CustomerState = request.CustomerState,
+                CustomerPostcode = request.CustomerPostcode,
+                CustomerCountry = request.CustomerCountry,
+                // Default URLs (should ideally come from config)
+                SuccessUrl = _configuration["EPS:SuccessUrl"] ?? "https://api.realproxy.net/api/Payment/callback/success",
+                FailUrl = _configuration["EPS:FailUrl"] ?? "https://api.realproxy.net/api/Payment/callback/fail",
+                CancelUrl = _configuration["EPS:CancelUrl"] ?? "https://api.realproxy.net/api/Payment/callback/cancel"
+            };
+
+            // 4. Call the existing initialization logic
+            return await InitializePaymentAsync(fullRequest, userId, ipAddress, userAgent);
         }
     }
 }

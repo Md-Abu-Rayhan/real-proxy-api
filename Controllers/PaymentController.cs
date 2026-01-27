@@ -14,12 +14,14 @@ namespace real_proxy_api.Controllers
         private readonly IPaymentService _paymentService;
         private readonly IPaymentRepository _paymentRepository;
         private readonly ILogger<PaymentController> _logger;
+        private readonly IConfiguration _configuration;
 
-        public PaymentController(IPaymentService paymentService, IPaymentRepository paymentRepository, ILogger<PaymentController> logger)
+        public PaymentController(IPaymentService paymentService, IPaymentRepository paymentRepository, ILogger<PaymentController> logger, IConfiguration configuration)
         {
             _paymentService = paymentService;
             _paymentRepository = paymentRepository;
             _logger = logger;
+            _configuration = configuration;
         }
 
         /// <summary>
@@ -160,6 +162,51 @@ namespace real_proxy_api.Controllers
         }
 
         /// <summary>
+        /// Initialize payment securely by looking up the price on the server
+        /// Requires authentication
+        /// </summary>
+        [HttpPost("initialize-secure")]
+        [Authorize]
+        public async Task<IActionResult> InitializeSecurePayment([FromBody] SecurePaymentRequest request)
+        {
+            try
+            {
+                var userId = GetUserIdFromToken();
+                if (!userId.HasValue)
+                {
+                    return Unauthorized(new { message = "Invalid or missing authentication token" });
+                }
+
+                if (string.IsNullOrWhiteSpace(request.PackageId))
+                {
+                    return BadRequest(new { message = "PackageId is required" });
+                }
+
+                var ipAddress = GetClientIpAddress();
+                var userAgent = GetUserAgent();
+
+                var result = await _paymentService.InitializeSecurePaymentAsync(request, userId.Value, ipAddress, userAgent);
+
+                if (!string.IsNullOrEmpty(result.ErrorMessage))
+                {
+                    return BadRequest(new { message = result.ErrorMessage, errorCode = result.ErrorCode });
+                }
+
+                return Ok(new
+                {
+                    transactionId = result.TransactionId,
+                    redirectUrl = result.RedirectURL,
+                    message = "Secure payment initialized successfully."
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error initializing secure payment");
+                return StatusCode(500, new { message = "An error occurred while initializing secure payment" });
+            }
+        }
+
+        /// <summary>
         /// Verify transaction status using merchant transaction ID
         /// Requires authentication
         /// </summary>
@@ -282,34 +329,22 @@ namespace real_proxy_api.Controllers
                 var ipAddress = GetClientIpAddress();
                 var verifyResult = await _paymentService.VerifyTransactionAsync(merchantTransactionId, ipAddress);
 
+                string frontendUrl = _configuration["EPS:FrontendUrl"] ?? "http://localhost:3002";
+                
                 if (verifyResult.Status == "Success")
                 {
-                    return Ok(new
-                    {
-                        success = true,
-                        message = "Payment completed and verified successfully",
-                        transactionId = transactionId,
-                        merchantTransactionId = merchantTransactionId,
-                        status = verifyResult.Status,
-                        amount = verifyResult.TotalAmount
-                    });
+                    return Redirect($"{frontendUrl}/payment/success?merchantTransactionId={merchantTransactionId}&status=Success");
                 }
                 else
                 {
-                    return Ok(new
-                    {
-                        success = false,
-                        message = "Payment callback received but verification failed",
-                        transactionId = transactionId,
-                        merchantTransactionId = merchantTransactionId,
-                        status = verifyResult.Status
-                    });
+                    return Redirect($"{frontendUrl}/payment/failed?merchantTransactionId={merchantTransactionId}&error=VerificationFailed");
                 }
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error handling payment success callback");
-                return StatusCode(500, new { message = "An error occurred while processing payment callback" });
+                string frontendUrl = _configuration["EPS:FrontendUrl"] ?? "http://localhost:3002";
+                return Redirect($"{frontendUrl}/payment/failed?error=InternalError");
             }
         }
 
@@ -350,18 +385,14 @@ namespace real_proxy_api.Controllers
                     }
                 }
 
-                return Ok(new
-                {
-                    success = false,
-                    message = "Payment failed",
-                    transactionId = transactionId,
-                    merchantTransactionId = merchantTransactionId
-                });
+                string frontendUrl = _configuration["EPS:FrontendUrl"] ?? "http://localhost:3002";
+                return Redirect($"{frontendUrl}/payment/failed?merchantTransactionId={merchantTransactionId}&status=Failed");
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error handling payment fail callback");
-                return StatusCode(500, new { message = "An error occurred while processing payment callback" });
+                string frontendUrl = _configuration["EPS:FrontendUrl"] ?? "http://localhost:3002";
+                return Redirect($"{frontendUrl}/payment/failed?error=InternalError");
             }
         }
 
@@ -402,18 +433,14 @@ namespace real_proxy_api.Controllers
                     }
                 }
 
-                return Ok(new
-                {
-                    success = false,
-                    message = "Payment cancelled by user",
-                    transactionId = transactionId,
-                    merchantTransactionId = merchantTransactionId
-                });
+                string frontendUrl = _configuration["EPS:FrontendUrl"] ?? "http://localhost:3002";
+                return Redirect($"{frontendUrl}/payment/cancelled?merchantTransactionId={merchantTransactionId}");
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error handling payment cancel callback");
-                return StatusCode(500, new { message = "An error occurred while processing payment callback" });
+                string frontendUrl = _configuration["EPS:FrontendUrl"] ?? "http://localhost:3002";
+                return Redirect($"{frontendUrl}/checkout");
             }
         }
 
