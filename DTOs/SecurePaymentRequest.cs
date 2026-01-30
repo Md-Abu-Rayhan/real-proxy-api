@@ -12,5 +12,7 @@ namespace real_proxy_api.DTOs
         public string CustomerState { get; set; } = string.Empty;
         public string CustomerPostcode { get; set; } = string.Empty;
         public string CustomerCountry { get; set; } = "BD";
+        public decimal? Amount { get; set; }
+        public string? Currency { get; set; }
     }
 }

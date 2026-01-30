@@ -282,9 +282,18 @@ namespace real_proxy_api.Services
                 var response = await _httpClient.SendAsync(httpRequest);
                 var responseContent = await response.Content.ReadAsStringAsync();
 
+                if (response.StatusCode == System.Net.HttpStatusCode.Redirect || 
+                    response.StatusCode == System.Net.HttpStatusCode.Found ||
+                    response.StatusCode == System.Net.HttpStatusCode.MovedPermanently)
+                {
+                    var location = response.Headers.Location?.ToString();
+                    _logger.LogWarning("EPS InitializePayment redirected ({StatusCode}) to: {Location}", response.StatusCode, location);
+                }
+
                 if (!response.IsSuccessStatusCode)
                 {
-                    _logger.LogError("EPS InitializePayment failed with status {StatusCode}: {Response}", response.StatusCode, responseContent);
+                    _logger.LogError("EPS InitializePayment failed with status {StatusCode}: {Response}. Headers: {Headers}", 
+                        response.StatusCode, responseContent, response.Headers.ToString());
                     
                     // Log the error
                     await _paymentRepository.CreatePaymentLogAsync(new PaymentLog
@@ -512,17 +521,27 @@ namespace real_proxy_api.Services
                 { "premium_pkg", ("Premium Package", 1000.50m) }
             };
 
-            if (!packages.TryGetValue(request.PackageId, out var package))
+            packages.TryGetValue(request.PackageId, out var package);
+            
+            decimal finalAmount = request.Amount ?? (package.Price > 0 ? package.Price : 0);
+            string finalProductName = package.Name ?? "Proxy Package";
+
+            if (request.Amount.HasValue && (request.PackageId == "custom" || string.IsNullOrEmpty(package.Name)))
             {
-                return new InitializePaymentResponse
+                finalProductName = $"Proxy Package {request.Amount} {request.Currency ?? "BDT"}";
+            }
+            
+            if (finalAmount <= 0)
+            {
+                 return new InitializePaymentResponse
                 {
-                    ErrorMessage = "Invalid Package ID selected.",
-                    ErrorCode = "INVALID_PACKAGE"
+                    ErrorMessage = "Invalid Amount.",
+                    ErrorCode = "INVALID_AMOUNT"
                 };
             }
 
-            // 2. Generate unique MerchantTransactionId
-            string merchantTxnId = $"TXN_{DateTime.UtcNow:yyyyMMddHHmmss}_{new Random().Next(1000, 9999)}";
+            // 2. Generate unique MerchantTransactionId (strictly numeric for some gateways)
+            string merchantTxnId = $"{DateTime.UtcNow:yyyyMMddHHmmss}{new Random().Next(1000, 9999)}";
 
             // 3. Create the full initialization request
             var fullRequest = new InitializePaymentRequest
@@ -530,8 +549,8 @@ namespace real_proxy_api.Services
                 CustomerOrderId = request.CustomerOrderId,
                 MerchantTransactionId = merchantTxnId,
                 TransactionTypeId = 1, // Web
-                TotalAmount = package.Price,
-                ProductName = package.Name,
+                TotalAmount = finalAmount,
+                ProductName = finalProductName,
                 ProductProfile = "general",
                 ProductCategory = "Proxy",
                 CustomerName = request.CustomerName,
