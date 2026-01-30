@@ -261,9 +261,11 @@ namespace real_proxy_api.Services
 
                 var xHash = GenerateHash(request.MerchantTransactionId, hashKey);
 
+                request.IpAddress = ipAddress ?? "127.0.0.1";
+                request.Version = "1";
+
                 var jsonOptions = new JsonSerializerOptions
                 {
-                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
                     WriteIndented = false
                 };
 
