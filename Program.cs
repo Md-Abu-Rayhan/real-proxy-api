@@ -65,6 +65,7 @@ builder.Services.AddScoped<IJwtService, JwtService>();
 builder.Services.AddScoped<ILocationService, LocationService>();
 builder.Services.AddHttpClient<IProxyService, ProxyService>();
 builder.Services.AddHttpClient<IPaymentService, PaymentService>();
+builder.Services.AddHttpClient<ICryptoPaymentService, CryptoPaymentService>();
 
 // Configure JWT Authentication
 var jwtSettings = builder.Configuration.GetSection("Jwt");
