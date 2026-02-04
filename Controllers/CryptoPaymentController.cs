@@ -41,7 +41,7 @@ namespace real_proxy_api.Controllers
                 {
                     success = true,
                     paymentUrl = paymentUrl,
-                    message = "MixPay payment initialized successfully."
+                    message = "Payment initialized successfully."
                 });
             }
             catch (Exception ex)
