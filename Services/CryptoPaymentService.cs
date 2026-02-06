@@ -77,5 +77,60 @@ namespace real_proxy_api.Services
                 throw;
             }
         }
+
+        public async Task<MixPayVerificationResult> VerifyPaymentAsync(string orderId)
+        {
+            var result = new MixPayVerificationResult { IsVerified = false };
+            try
+            {
+                _logger.LogInformation("Verifying MixPay payment for OrderId: {OrderId}", orderId);
+
+                var mixPaySettings = _configuration.GetSection("MixPay");
+                var payeeId = mixPaySettings["PayeeId"];
+
+                var response = await _httpClient.GetAsync($"https://api.mixpay.me/v1/payments_results?orderId={orderId}");
+                var responseContent = await response.Content.ReadAsStringAsync();
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogError("MixPay Results API failed with status {StatusCode}: {Response}", response.StatusCode, responseContent);
+                    return result;
+                }
+
+                using var doc = JsonDocument.Parse(responseContent);
+                var root = doc.RootElement;
+
+                if (root.GetProperty("success").GetBoolean())
+                {
+                    var data = root.GetProperty("data");
+                    result.Status = data.TryGetProperty("status", out var sp) ? sp.GetString() : null;
+                    result.TraceId = data.TryGetProperty("traceId", out var tp) ? tp.GetString() : null;
+                    result.PayeeId = data.TryGetProperty("payeeId", out var pp) ? pp.GetString() : null;
+                    result.QuoteAmount = data.TryGetProperty("quoteAmount", out var qap) ? qap.GetString() : null;
+                    result.QuoteAssetId = data.TryGetProperty("quoteAssetId", out var qasp) ? qasp.GetString() : null;
+                    result.PaymentAssetId = data.TryGetProperty("paymentAssetId", out var pasp) ? pasp.GetString() : null;
+                    result.PaymentAmount = data.TryGetProperty("paymentAmount", out var pamp) ? pamp.GetString() : null;
+
+                    // Verification as per guide
+                    if (result.Status == "success" && result.PayeeId == payeeId)
+                    {
+                        _logger.LogInformation("MixPay payment verified successfully for OrderId: {OrderId}", orderId);
+                        result.IsVerified = true;
+                    }
+                }
+
+                if (!result.IsVerified)
+                {
+                    _logger.LogWarning("MixPay payment verification failed or pending for OrderId: {OrderId}. Response: {Response}", orderId, responseContent);
+                }
+                
+                return result;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error verifying MixPay payment for OrderId: {OrderId}", orderId);
+                return result;
+            }
+        }
     }
 }

@@ -55,6 +55,7 @@ builder.Services.AddTransient<MySqlConnection>(_ =>
 builder.Services.AddScoped<IOtpRepository, OtpRepository>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IPaymentRepository, PaymentRepository>();
+builder.Services.AddScoped<ICryptoPaymentRepository, CryptoPaymentRepository>();
 
 // Register Services
 builder.Services.AddMemoryCache();
