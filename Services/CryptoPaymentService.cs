@@ -29,6 +29,13 @@ namespace real_proxy_api.Services
                 var returnTo = mixPaySettings["ReturnTo"] ?? throw new InvalidOperationException("MixPay ReturnTo not configured");
                 var callbackUrl = mixPaySettings["CallbackUrl"] ?? throw new InvalidOperationException("MixPay CallbackUrl not configured");
 
+                // Ensure orderId is appended to returnTo so frontend can verify it
+                var returnToUrl = returnTo;
+                if (!returnToUrl.Contains("orderId="))
+                {
+                    returnToUrl += (returnToUrl.Contains("?") ? "&" : "?") + "orderId=" + request.OrderId;
+                }
+
                 var formData = new List<KeyValuePair<string, string>>
                 {
                     new KeyValuePair<string, string>("payeeId", payeeId),
@@ -36,13 +43,14 @@ namespace real_proxy_api.Services
                     new KeyValuePair<string, string>("quoteAssetId", request.QuoteAssetId ?? "usd"),
                     new KeyValuePair<string, string>("quoteAmount", request.Amount.ToString("F")),
                     new KeyValuePair<string, string>("orderId", request.OrderId),
-                    new KeyValuePair<string, string>("returnTo", returnTo),
+                    new KeyValuePair<string, string>("returnTo", returnToUrl),
                     new KeyValuePair<string, string>("callbackUrl", callbackUrl)
                 };
 
                 var content = new FormUrlEncodedContent(formData);
 
-                _logger.LogInformation("Creating MixPay one-time payment for OrderId: {OrderId}, Amount: {Amount}", request.OrderId, request.Amount);
+                _logger.LogInformation("Creating MixPay one-time payment for OrderId: {OrderId}, Amount: {Amount}, ReturnTo: {ReturnTo}", 
+                    request.OrderId, request.Amount, returnToUrl);
 
                 var response = await _httpClient.PostAsync("https://api.mixpay.me/v1/one_time_payment", content);
                 var responseContent = await response.Content.ReadAsStringAsync();
@@ -78,7 +86,7 @@ namespace real_proxy_api.Services
             }
         }
 
-        public async Task<MixPayVerificationResult> VerifyPaymentAsync(string orderId)
+        public async Task<MixPayVerificationResult> VerifyPaymentAsync(string orderId, decimal? expectedAmount = null, string? expectedAssetId = null)
         {
             var result = new MixPayVerificationResult { IsVerified = false };
             try
@@ -88,7 +96,7 @@ namespace real_proxy_api.Services
                 var mixPaySettings = _configuration.GetSection("MixPay");
                 var payeeId = mixPaySettings["PayeeId"];
 
-                var response = await _httpClient.GetAsync($"https://api.mixpay.me/v1/payments_results?orderId={orderId}");
+                var response = await _httpClient.GetAsync($"https://api.mixpay.me/v1/payments_result?orderId={orderId}&payeeId={payeeId}");
                 var responseContent = await response.Content.ReadAsStringAsync();
 
                 if (!response.IsSuccessStatusCode)
@@ -110,12 +118,43 @@ namespace real_proxy_api.Services
                     result.QuoteAssetId = data.TryGetProperty("quoteAssetId", out var qasp) ? qasp.GetString() : null;
                     result.PaymentAssetId = data.TryGetProperty("paymentAssetId", out var pasp) ? pasp.GetString() : null;
                     result.PaymentAmount = data.TryGetProperty("paymentAmount", out var pamp) ? pamp.GetString() : null;
+                    result.Txid = data.TryGetProperty("txid", out var txp) ? txp.GetString() : null;
+                    result.BlockExplorerUrl = data.TryGetProperty("blockExplorerUrl", out var bep) ? bep.GetString() : null;
 
-                    // Verification as per guide
-                    if (result.Status == "success" && result.PayeeId == payeeId)
+                    // 1. Check status is success
+                    bool statusMatch = result.Status == "success";
+                    
+                    // 2. Check payeeId matches (Security check from guide)
+                    bool payeeMatch = result.PayeeId == payeeId;
+
+                    // 3. Check quoteAssetId matches (Security check from guide)
+                    bool assetMatch = expectedAssetId == null || result.QuoteAssetId?.ToLower() == expectedAssetId.ToLower();
+
+                    // 4. Check quoteAmount matches (Security check from guide)
+                    bool amountMatch = true;
+                    if (expectedAmount.HasValue && !string.IsNullOrEmpty(result.QuoteAmount))
+                    {
+                        if (decimal.TryParse(result.QuoteAmount, out decimal actualAmount))
+                        {
+                            // Allow for small rounding differences in decimal comparison if necessary, 
+                            // but usually these should match exactly as they come from the same source.
+                            amountMatch = Math.Abs(actualAmount - expectedAmount.Value) < 0.0001m;
+                        }
+                        else
+                        {
+                            amountMatch = false;
+                        }
+                    }
+
+                    if (statusMatch && payeeMatch && assetMatch && amountMatch)
                     {
                         _logger.LogInformation("MixPay payment verified successfully for OrderId: {OrderId}", orderId);
                         result.IsVerified = true;
+                    }
+                    else
+                    {
+                        _logger.LogWarning("MixPay payment verification failed strict checks: Status:{Status}, PayeeMatch:{PayeeMatch}, AssetMatch:{AssetMatch}, AmountMatch:{AmountMatch}", 
+                            result.Status, payeeMatch, assetMatch, amountMatch);
                     }
                 }
 

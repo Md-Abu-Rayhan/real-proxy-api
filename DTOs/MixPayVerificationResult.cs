@@ -10,5 +10,7 @@ namespace real_proxy_api.DTOs
         public string? QuoteAssetId { get; set; }
         public string? PaymentAssetId { get; set; }
         public string? PaymentAmount { get; set; }
+        public string? Txid { get; set; }
+        public string? BlockExplorerUrl { get; set; }
     }
 }

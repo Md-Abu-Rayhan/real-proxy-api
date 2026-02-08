@@ -35,7 +35,7 @@ namespace real_proxy_api.Repositories
             return await _connection.QueryFirstOrDefaultAsync<CryptoPayment>(sql, new { OrderId = orderId });
         }
 
-        public async Task<bool> UpdateStatusAsync(string orderId, string status, string? traceId = null, string? paymentAssetId = null, string? paymentAmount = null, DateTime? completedAt = null)
+        public async Task<bool> UpdateStatusAsync(string orderId, string status, string? traceId = null, string? paymentAssetId = null, string? paymentAmount = null, string? txid = null, string? blockExplorerUrl = null, DateTime? completedAt = null)
         {
             var sql = @"
                 UPDATE crypto_payments 
@@ -43,6 +43,8 @@ namespace real_proxy_api.Repositories
                     TraceId = COALESCE(@TraceId, TraceId),
                     PaymentAssetId = COALESCE(@PaymentAssetId, PaymentAssetId),
                     PaymentAmount = COALESCE(@PaymentAmount, PaymentAmount),
+                    Txid = COALESCE(@Txid, Txid),
+                    BlockExplorerUrl = COALESCE(@BlockExplorerUrl, BlockExplorerUrl),
                     CompletedAt = COALESCE(@CompletedAt, CompletedAt), 
                     UpdatedAt = @UpdatedAt 
                 WHERE OrderId = @OrderId";
@@ -54,6 +56,8 @@ namespace real_proxy_api.Repositories
                 TraceId = traceId,
                 PaymentAssetId = paymentAssetId,
                 PaymentAmount = paymentAmount,
+                Txid = txid,
+                BlockExplorerUrl = blockExplorerUrl,
                 CompletedAt = completedAt, 
                 UpdatedAt = DateTime.UtcNow 
             });

@@ -18,6 +18,8 @@ namespace real_proxy_api.Models
         // User Payment Details (Populated after successful payment)
         public string? PaymentAssetId { get; set; } // The actual crypto used (e.g. BTC)
         public string? PaymentAmount { get; set; } // The actual crypto amount paid
+        public string? Txid { get; set; }
+        public string? BlockExplorerUrl { get; set; }
         
         // Status & Links
         public string Status { get; set; } = "Pending";

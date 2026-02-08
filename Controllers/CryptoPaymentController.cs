@@ -96,6 +96,74 @@ namespace real_proxy_api.Controllers
             }
         }
 
+        [HttpGet("verify/{orderId}")]
+        [Authorize]
+        public async Task<IActionResult> Verify(string orderId)
+        {
+            try
+            {
+                _logger.LogInformation("Manual verification requested for OrderId: {OrderId}", orderId);
+                var payment = await _cryptoPaymentRepository.GetByOrderIdAsync(orderId);
+                if (payment == null)
+                {
+                    return NotFound(new { message = "Payment not found" });
+                }
+
+                // Verify user owns this payment
+                var userIdStr = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(userIdStr) || !int.TryParse(userIdStr, out int userId) || payment.UserId != userId)
+                {
+                    return Forbid();
+                }
+
+                if (payment.Status == "Success")
+                {
+                    return Ok(new { success = true, status = "Success", payment });
+                }
+
+                // Trigger verification with MixPay API
+                var verificationResult = await _cryptoPaymentService.VerifyPaymentAsync(orderId, payment.Amount, payment.QuoteAssetId);
+
+                if (verificationResult.IsVerified)
+                {
+                    _logger.LogInformation("Verification successful for OrderId: {OrderId}", orderId);
+                    await _cryptoPaymentRepository.UpdateStatusAsync(
+                        orderId,
+                        "Success",
+                        traceId: verificationResult.TraceId,
+                        paymentAssetId: verificationResult.PaymentAssetId,
+                        paymentAmount: verificationResult.PaymentAmount,
+                        txid: verificationResult.Txid,
+                        blockExplorerUrl: verificationResult.BlockExplorerUrl,
+                        completedAt: DateTime.UtcNow
+                    );
+
+                    // Re-fetch updated payment
+                    payment = await _cryptoPaymentRepository.GetByOrderIdAsync(orderId);
+                    
+                    await _cryptoPaymentRepository.CreateLogAsync(new real_proxy_api.Models.CryptoPaymentLog
+                    {
+                        CryptoPaymentId = payment!.Id,
+                        Action = "ManualVerifySuccess",
+                        NewStatus = "Success",
+                        ResponseData = JsonSerializer.Serialize(verificationResult),
+                        IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString()
+                    });
+
+                    return Ok(new { success = true, status = "Success", payment });
+                }
+
+                _logger.LogWarning("Verification failed for OrderId: {OrderId}. Result: {Result}", orderId, JsonSerializer.Serialize(verificationResult));
+                
+                return Ok(new { success = false, status = payment.Status, message = "Payment not yet verified or failed." });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error verifying crypto payment for OrderId: {OrderId}", orderId);
+                return StatusCode(500, new { message = "An error occurred while verifying payment", error = ex.Message });
+            }
+        }
+
         [HttpPost("callback")]
         [AllowAnonymous]
         public async Task<IActionResult> Callback([FromBody] JsonElement callbackData)
@@ -105,7 +173,18 @@ namespace real_proxy_api.Controllers
 
             try
             {
-                _logger.LogInformation("MixPay callback received: {Data}", callbackData.GetRawText());
+                var remoteIp = HttpContext.Connection.RemoteIpAddress?.ToString();
+                _logger.LogInformation("MixPay callback received from {IP}: {Data}", remoteIp, callbackData.GetRawText());
+
+                // Security: IP Whitelisting as per guide (Section 2.3.7)
+                // MixPay IP: 52.198.117.57
+                // Allow localhost for development
+                if (remoteIp != "52.198.117.57" && remoteIp != "::1" && remoteIp != "127.0.0.1" && !remoteIp!.StartsWith("192.168."))
+                {
+                    _logger.LogWarning("Unauthorized MixPay callback attempt from IP: {IP}", remoteIp);
+                    // Still return success to avoid letting attacker know it failed, but don't process
+                    return Ok(new { code = "SUCCESS" });
+                }
 
                 // MixPay callback sends the payment details including orderId
                 if (callbackData.TryGetProperty("data", out var data) && data.TryGetProperty("orderId", out var orderIdProp))
@@ -118,7 +197,7 @@ namespace real_proxy_api.Controllers
                     if (payment == null)
                     {
                         _logger.LogWarning("Callback received for unknown crypto order: {OrderId}", orderId);
-                        return NotFound();
+                        return Ok(new { code = "SUCCESS" }); // Still return success per guide 3.4.2
                     }
 
                     // Log callback arrival
@@ -128,7 +207,7 @@ namespace real_proxy_api.Controllers
                         Action = "CallbackReceived",
                         PreviousStatus = payment.Status,
                         RequestData = callbackData.GetRawText(),
-                        IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString()
+                        IpAddress = remoteIp
                     });
 
                     if (payment.Status == "Success")
@@ -136,8 +215,9 @@ namespace real_proxy_api.Controllers
                         return Ok(new { code = "SUCCESS" });
                     }
 
-                    // 2. Verify with MixPay Result API (mandatory as per guide)
-                    var verificationResult = await _cryptoPaymentService.VerifyPaymentAsync(orderId);
+                    // 2. Verify with MixPay Result API (mandatory as per guide 2.4.3)
+                    // We pass the expected amount and assetId for strict verification
+                    var verificationResult = await _cryptoPaymentService.VerifyPaymentAsync(orderId, payment.Amount, payment.QuoteAssetId);
 
                     if (verificationResult.IsVerified)
                     {
@@ -149,6 +229,8 @@ namespace real_proxy_api.Controllers
                             traceId: verificationResult.TraceId,
                             paymentAssetId: verificationResult.PaymentAssetId,
                             paymentAmount: verificationResult.PaymentAmount,
+                            txid: verificationResult.Txid,
+                            blockExplorerUrl: verificationResult.BlockExplorerUrl,
                             completedAt: DateTime.UtcNow
                         );
                         
