@@ -63,7 +63,6 @@ builder.Services.AddHttpClient();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IJwtService, JwtService>();
-builder.Services.AddScoped<ILocationService, LocationService>();
 builder.Services.AddHttpClient<IProxyService, ProxyService>();
 builder.Services.AddHttpClient<IPaymentService, PaymentService>();
 builder.Services.AddHttpClient<ICryptoPaymentService, CryptoPaymentService>();

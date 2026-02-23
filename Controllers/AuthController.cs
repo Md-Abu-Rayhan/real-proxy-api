@@ -85,15 +85,14 @@ namespace real_proxy_api.Controllers
                 if (result.Message.Contains("not found"))
                     return NotFound(result.Message);
                 if (result.Message.Contains("already has"))
-                    return Conflict(new { message = result.Message, proxyAccount = result.ProxyAccount });
+                    return Conflict(new { message = result.Message });
                 return BadRequest(result.Message);
             }
 
             return Ok(new 
             { 
                 message = result.Message,
-                proxyAccount = result.ProxyAccount,
-                proxyPassword = result.ProxyPassword
+                data = result.Data
             });
         }
 

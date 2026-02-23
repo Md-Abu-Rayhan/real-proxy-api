@@ -42,34 +42,27 @@ namespace real_proxy_api.Services
             // Hash password
             var passwordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
 
-            // Generate unique proxy account and password
+            // Generate unique account name like RP(random)
             string proxyAccount;
             do
             {
-                proxyAccount = GenerateUniqueAccount();
+                var random = new Random();
+                proxyAccount = $"RP{random.Next(10000000, 99999999)}";
             } while (await _userRepository.ProxyAccountExistsAsync(proxyAccount));
 
-            var proxyPassword = GenerateUniquePassword();
-
-            // Call the 922proxy API to create sub-account
-            var proxyResult = await _proxyService.CreateSubAccountAsync(
-                proxyAccount,
-                proxyPassword,
-                proxyType: 1,
-                remark: request.Email,
-                traffic: 10,
-                trafficUnit: "MB",
-                bandwidth: 0,
-                hostname: 0,
-                status: 1);
+            // Call the Evomi API to create sub-account (balance 0 initially)
+            var proxyResult = await _proxyService.CreateEvomiSubUserAsync(proxyAccount, request.Email, 0);
 
             if (!proxyResult.Success)
             {
                 return (false, $"Failed to create proxy account: {proxyResult.Message}");
             }
 
-            // Create user with all fields at once
-            await _userRepository.CreateUserWithProxyAsync(request.Email, passwordHash, request.InvitationCode, proxyAccount, proxyPassword);
+            // Extract proxy key if available, else empty string
+            var proxyKey = proxyResult.ResidentialProxyKey ?? "";
+
+            // Create user with all fields at once (store proxy key in proxy_password column)
+            await _userRepository.CreateUserWithProxyAsync(request.Email, passwordHash, request.InvitationCode, proxyAccount, proxyKey);
 
             return (true, "User registered successfully");
         }
@@ -160,76 +153,51 @@ namespace real_proxy_api.Services
             return (true, "Password reset successfully.");
         }
 
-        public async Task<(bool Success, string Message, string? ProxyAccount, string? ProxyPassword)> AddSubAccountAsync(AddSubAccountRequest request)
+        public async Task<(bool Success, string Message, object? Data)> AddSubAccountAsync(AddSubAccountRequest request)
         {
             if (string.IsNullOrEmpty(request.Email))
             {
-                return (false, "Email is required.", null, null);
+                return (false, "Email is required.", null);
             }
 
             // Check if user exists
             var user = await _userRepository.GetUserByEmailAsync(request.Email);
             if (user == null)
             {
-                return (false, "User not found. Please register first.", null, null);
+                return (false, "User not found. Please register first.", null);
             }
 
             // Check if user already has a proxy account
             if (!string.IsNullOrEmpty(user.ProxyAccount))
             {
-                return (false, "User already has a proxy sub-account.", user.ProxyAccount, null);
+                return (false, "User already has a proxy sub-account.", null);
             }
 
-            // Generate unique account name and password
+            // Generate unique account name like RP(random)
             string proxyAccount;
             do
             {
-                proxyAccount = GenerateUniqueAccount();
+                var random = new Random();
+                proxyAccount = $"RP{random.Next(10000000, 99999999)}";
             } while (await _userRepository.ProxyAccountExistsAsync(proxyAccount));
 
-            var proxyPassword = GenerateUniquePassword();
-
-            // Call the 922proxy API to create sub-account
-            var result = await _proxyService.CreateSubAccountAsync(
-                proxyAccount,
-                proxyPassword,
-                request.ProxyType,
-                request.Remark,
-                request.Traffic,
-                request.TrafficUnit,
-                request.Bandwidth,
-                request.Hostname,
-                request.Status);
+            // Call the Evomi API to create sub-account
+            var result = await _proxyService.CreateEvomiSubUserAsync(proxyAccount, request.Email, request.Balance);
 
             if (!result.Success)
             {
-                return (false, result.Message, null, null);
+                return (false, result.Message, null);
             }
 
-            // Update user with proxy account info
-            await _userRepository.UpdateProxyAccountAsync(request.Email, proxyAccount, proxyPassword);
+            // Extract proxy key if available, else empty string
+            var proxyKey = result.ResidentialProxyKey ?? "";
 
-            return (true, "Sub-account created successfully.", proxyAccount, proxyPassword);
+            // Update user with proxy account info (save proxy key as ProxyPassword)
+            await _userRepository.UpdateProxyAccountAsync(request.Email, proxyAccount, proxyKey);
+
+            return (true, "Sub-account created successfully.", result.Data);
         }
 
-        private static string GenerateUniqueAccount()
-        {
-            // Generate account like: user_xxxxxxxx (8 random alphanumeric characters)
-            const string chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-            var random = new Random();
-            var randomPart = new string(Enumerable.Repeat(chars, 8)
-                .Select(s => s[random.Next(s.Length)]).ToArray());
-            return $"user_{randomPart}";
-        }
-
-        private static string GenerateUniquePassword()
-        {
-            // Generate a strong 12-character password
-            const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-            var random = new Random();
-            return new string(Enumerable.Repeat(chars, 12)
-                .Select(s => s[random.Next(s.Length)]).ToArray());
-        }
 
         public async Task<(bool Success, string Message, string? ProxyAccount, string? ProxyPassword)> GetProxyInfoAsync(string email)
         {

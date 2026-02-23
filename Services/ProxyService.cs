@@ -15,75 +15,66 @@ namespace real_proxy_api.Services
             _logger = logger;
         }
 
-        public async Task<(bool Success, string Message, string? Account, string? Password)> CreateSubAccountAsync(
-            string account,
-            string password,
-            int proxyType,
-            string? remark,
-            int traffic,
-            string trafficUnit,
-            int bandwidth,
-            int hostname,
-            int status)
-        {
-            var token = "1fba7889-4be8-49fa-a34d-1551a96d2e7d";
-            //var token = _configuration["ProxyApi:Token"];
-            var key = "F692CNNBuDSWoNUU";
-            //var key = _configuration["ProxyApi:Key"];
-            var apiUrl = _configuration["ProxyApi:BaseUrl"] ?? "https://docapi.922proxy.com/api/account/create";
 
-            var formData = new Dictionary<string, string>
+        public async Task<(bool Success, string Message, string? ResidentialProxyKey, object? Data)> CreateEvomiSubUserAsync(string username, string email, decimal balance)
+        {
+            var apiKey = _configuration.GetConnectionString("EvomiApiKey");
+            if (string.IsNullOrEmpty(apiKey)) apiKey = "xrLkWmoX8AFx6G72ipvU";
+
+            var apiUrl = "https://reseller.evomi.com/v2/reseller/sub_users/create";
+
+            var payload = new
             {
-                { "token", token ?? "" },
-                { "key", key ?? "" },
-                { "account", account },
-                { "password", password },
-                { "proxy_type", proxyType.ToString() },
-                { "remark", remark ?? "" },
-                { "traffic", traffic.ToString() },
-                { "traffic_unit", trafficUnit },
-                { "bandwidth", bandwidth.ToString() },
-                { "hostname", hostname.ToString() },
-                { "status", status.ToString() }
+                username = username,
+                email = email,
+                balance = balance
             };
 
             try
             {
-                var content = new FormUrlEncodedContent(formData);
-                var response = await _httpClient.PostAsync(apiUrl, content);
+                using var request = new HttpRequestMessage(HttpMethod.Put, apiUrl);
+                request.Headers.Add("X-API-KEY", apiKey);
+                request.Content = new StringContent(JsonSerializer.Serialize(payload), System.Text.Encoding.UTF8, "application/json");
+
+                var response = await _httpClient.SendAsync(request);
                 var responseContent = await response.Content.ReadAsStringAsync();
 
-                _logger.LogInformation("Proxy API response: {Response}", responseContent);
+                _logger.LogInformation("Evomi API response: {Response}", responseContent);
 
                 if (response.IsSuccessStatusCode)
                 {
-                    var jsonDoc = JsonDocument.Parse(responseContent);
-                    var root = jsonDoc.RootElement;
-
-                    // Check if the API response indicates success (code can be string or number: 0 or 200)
-                    if (root.TryGetProperty("code", out var codeElement))
+                    string? proxyKey = null;
+                    try
                     {
-                        var codeValue = codeElement.ValueKind == JsonValueKind.String 
-                            ? codeElement.GetString() 
-                            : codeElement.GetInt32().ToString();
-                        
-                        if (codeValue == "0" || codeValue == "200")
-                        {
-                            return (true, "Sub-account created successfully", account, password);
-                        }
+                        var jsonDoc = JsonDocument.Parse(responseContent);
+                        var root = jsonDoc.RootElement;
+                        proxyKey = root.GetProperty("data")
+                                       .GetProperty("products")
+                                       .GetProperty("residential")
+                                       .GetProperty("proxy_key")
+                                       .GetString();
+                    }
+                    catch
+                    {
+                        // Ignore parsing errors for proxy key
                     }
 
-                    var errorMessage = root.TryGetProperty("msg", out var msgElement) 
-                        ? msgElement.GetString() 
-                        : $"Proxy API error. Response: {responseContent}";
-                    return (false, errorMessage ?? "Unknown error", null, null);
+                    try
+                    {
+                        var data = JsonSerializer.Deserialize<object>(responseContent);
+                        return (true, "Account created successfully", proxyKey, data);
+                    }
+                    catch
+                    {
+                        return (true, "Account created successfully", proxyKey, responseContent);
+                    }
                 }
 
-                return (false, $"Failed to create sub-account: {responseContent}", null, null);
+                return (false, $"Failed to create Evomi sub-account: {responseContent}", null, null);
             }
             catch (Exception ex)
             {
-                return (false, $"Error calling proxy API: {ex.Message}", null, null);
+                return (false, $"Error calling Evomi API: {ex.Message}", null, null);
             }
         }
     }
