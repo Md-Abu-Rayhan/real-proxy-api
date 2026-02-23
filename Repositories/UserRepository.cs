@@ -19,6 +19,12 @@ namespace real_proxy_api.Repositories
             return await _connection.QueryFirstOrDefaultAsync<User>(sql, new { Email = email });
         }
 
+        public async Task<User?> GetUserByIdAsync(int id)
+        {
+            var sql = "SELECT * FROM users WHERE Id = @Id";
+            return await _connection.QueryFirstOrDefaultAsync<User>(sql, new { Id = id });
+        }
+
         public async Task<bool> UserExistsAsync(string email)
         {
             var sql = "SELECT COUNT(1) FROM users WHERE Email = @Email";

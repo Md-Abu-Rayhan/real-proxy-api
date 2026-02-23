@@ -310,6 +310,26 @@ namespace real_proxy_api.Repositories
             return await _connection.QueryFirstOrDefaultAsync<PaymentMetadata>(sql, new { PaymentId = paymentId });
         }
 
+        // ==================== Proxy Purchase Operations ====================
+
+        public async Task<int> CreateProxyPurchaseAsync(ProxyPurchase purchase)
+        {
+            var sql = @"
+                INSERT INTO ProxyPurchase (Username, Email, Amount, Balance, CreatedAt)
+                VALUES (@Username, @Email, @Amount, @Balance, @CreatedAt);
+                SELECT LAST_INSERT_ID();";
+            return await _connection.ExecuteScalarAsync<int>(sql, purchase);
+        }
+
+        public async Task<int> CreateProxyPurchaseLogAsync(ProxyPurchaseLog log)
+        {
+            var sql = @"
+                INSERT INTO ProxyPurchaseLog (Username, Amount, Balance, ErrorMessage, CreatedAt)
+                VALUES (@Username, @Amount, @Balance, @ErrorMessage, @CreatedAt);
+                SELECT LAST_INSERT_ID();";
+            return await _connection.ExecuteScalarAsync<int>(sql, log);
+        }
+
         // ==================== Transaction Management ====================
 
         public async Task<int> CreatePaymentWithLogAsync(Payment payment, PaymentLog initialLog)

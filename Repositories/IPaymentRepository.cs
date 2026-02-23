@@ -116,6 +116,18 @@ namespace real_proxy_api.Repositories
         /// </summary>
         Task<PaymentMetadata?> GetPaymentMetadataAsync(int paymentId);
         
+        // ==================== Proxy Purchase Operations ====================
+        
+        /// <summary>
+        /// Create a new proxy purchase record
+        /// </summary>
+        Task<int> CreateProxyPurchaseAsync(ProxyPurchase purchase);
+        
+        /// <summary>
+        /// Create a new proxy purchase log record
+        /// </summary>
+        Task<int> CreateProxyPurchaseLogAsync(ProxyPurchaseLog log);
+
         // ==================== Transaction Management ====================
         
         /// <summary>

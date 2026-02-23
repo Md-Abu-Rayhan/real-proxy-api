@@ -77,5 +77,50 @@ namespace real_proxy_api.Services
                 return (false, $"Error calling Evomi API: {ex.Message}", null, null);
             }
         }
+
+        public async Task<(bool Success, string Message, object? Data)> GiveBalanceAsync(string username, decimal balance)
+        {
+            var apiKey = _configuration.GetConnectionString("EvomiApiKey");
+            if (string.IsNullOrEmpty(apiKey)) apiKey = "xrLkWmoX8AFx6G72ipvU";
+
+            var apiUrl = "https://reseller.evomi.com/v2/reseller/sub_users/give_rp_balance";
+
+            var payload = new
+            {
+                username = username,
+                balance = balance
+            };
+
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Post, apiUrl);
+                request.Headers.Add("X-API-KEY", apiKey);
+                request.Content = new StringContent(JsonSerializer.Serialize(payload), System.Text.Encoding.UTF8, "application/json");
+
+                var response = await _httpClient.SendAsync(request);
+                var responseContent = await response.Content.ReadAsStringAsync();
+
+                _logger.LogInformation("Evomi Give Balance API response: {Response}", responseContent);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    try
+                    {
+                        var data = JsonSerializer.Deserialize<object>(responseContent);
+                        return (true, "Balance added successfully", data);
+                    }
+                    catch
+                    {
+                        return (true, "Balance added successfully", responseContent);
+                    }
+                }
+
+                return (false, $"Failed to add balance: {responseContent}", null);
+            }
+            catch (Exception ex)
+            {
+                return (false, $"Error calling Evomi API: {ex.Message}", null);
+            }
+        }
     }
 }

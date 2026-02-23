@@ -15,13 +15,23 @@ namespace real_proxy_api.Controllers
         private readonly IPaymentRepository _paymentRepository;
         private readonly ILogger<PaymentController> _logger;
         private readonly IConfiguration _configuration;
+        private readonly IProxyService _proxyService;
+        private readonly IUserRepository _userRepository;
 
-        public PaymentController(IPaymentService paymentService, IPaymentRepository paymentRepository, ILogger<PaymentController> logger, IConfiguration configuration)
+        public PaymentController(
+            IPaymentService paymentService, 
+            IPaymentRepository paymentRepository, 
+            ILogger<PaymentController> logger, 
+            IConfiguration configuration,
+            IProxyService proxyService,
+            IUserRepository userRepository)
         {
             _paymentService = paymentService;
             _paymentRepository = paymentRepository;
             _logger = logger;
             _configuration = configuration;
+            _proxyService = proxyService;
+            _userRepository = userRepository;
         }
 
         /// <summary>
@@ -333,6 +343,46 @@ namespace real_proxy_api.Controllers
                 
                 if (verifyResult.Status == "Success")
                 {
+                    try
+                    {
+                        // 1 gb 125 taka if user pay 125 taka then add balance 1000
+                        // if user pay 625 taka then add balance 5000
+                        decimal balanceToAdd = payment.Amount * 8;
+
+                        var user = await _userRepository.GetUserByIdAsync(payment.UserId);
+                        if (user != null && !string.IsNullOrEmpty(user.ProxyAccount))
+                        {
+                            var evomiResult = await _proxyService.GiveBalanceAsync(user.ProxyAccount, balanceToAdd);
+                            
+                            if (evomiResult.Success)
+                            {
+                                await _paymentRepository.CreateProxyPurchaseAsync(new real_proxy_api.Models.ProxyPurchase
+                                {
+                                    Username = user.ProxyAccount,
+                                    Email = user.Email,
+                                    Amount = payment.Amount,
+                                    Balance = balanceToAdd,
+                                    CreatedAt = DateTime.UtcNow
+                                });
+                            }
+                            else
+                            {
+                                await _paymentRepository.CreateProxyPurchaseLogAsync(new real_proxy_api.Models.ProxyPurchaseLog
+                                {
+                                    Username = user.ProxyAccount,
+                                    Amount = payment.Amount,
+                                    Balance = balanceToAdd,
+                                    ErrorMessage = evomiResult.Message,
+                                    CreatedAt = DateTime.UtcNow
+                                });
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error processing proxy balance after successful payment");
+                    }
+
                     return Redirect($"{frontendUrl}/payment/success?merchantTransactionId={merchantTransactionId}&status=Success");
                 }
                 else
