@@ -68,5 +68,38 @@ namespace real_proxy_api.Controllers
                 return StatusCode(500, $"Internal server error: {ex.Message}");
             }
         }
+
+        [HttpGet("sub_user")]
+        public async Task<IActionResult> GetSubUser([FromQuery] string username)
+        {
+            if (string.IsNullOrEmpty(username))
+            {
+                return BadRequest("Username is required.");
+            }
+
+            try
+            {
+                var requestUrl = $"https://reseller.evomi.com/v2/reseller/sub_users/view_single?username={username}";
+                var request = new HttpRequestMessage(HttpMethod.Get, requestUrl);
+                request.Headers.Add("X-API-KEY", "xrLkWmoX8AFx6G72ipvU"); // Make sure to move this to appsettings.json later
+
+                var response = await _httpClient.SendAsync(request);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    return StatusCode((int)response.StatusCode, $"Error calling Evomi API: {response.ReasonPhrase}. Details: {errorContent}");
+                }
+
+                var content = await response.Content.ReadAsStringAsync();
+                
+                // Return the exact JSON response back to the client
+                return Content(content, "application/json");
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Internal server error: {ex.Message}");
+            }
+        }
     }
 }
